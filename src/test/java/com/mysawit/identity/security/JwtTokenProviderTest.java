@@ -1,5 +1,6 @@
 package com.mysawit.identity.security;
 
+import com.mysawit.identity.enums.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -19,7 +20,7 @@ class JwtTokenProviderTest {
 
     @Test
     void generateAndParseTokenWorks() {
-        String token = jwtTokenProvider.generateToken("user", 1L, "USER");
+        String token = jwtTokenProvider.generateToken("user", "1", Role.BURUH);
 
         assertNotNull(token);
         assertEquals("user", jwtTokenProvider.getUsernameFromToken(token));

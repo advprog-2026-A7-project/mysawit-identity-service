@@ -1,5 +1,6 @@
 package com.mysawit.identity.model;
 
+import com.mysawit.identity.enums.Role;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -14,21 +15,21 @@ class UserTest {
         LocalDateTime createdAt = LocalDateTime.of(2026, 1, 1, 9, 0);
         LocalDateTime updatedAt = LocalDateTime.of(2026, 1, 1, 10, 0);
 
-        assertEquals("USER", user.getRole());
+        assertNull(user.getRole());
 
-        user.setId(1L);
+        user.setId("1");
         user.setUsername("user");
         user.setEmail("user@mail.com");
         user.setPassword("secret");
-        user.setRole("ADMIN");
+        user.setRole(Role.ADMIN);
         user.setCreatedAt(createdAt);
         user.setUpdatedAt(updatedAt);
 
-        assertEquals(1L, user.getId());
+        assertEquals("1", user.getId());
         assertEquals("user", user.getUsername());
         assertEquals("user@mail.com", user.getEmail());
         assertEquals("secret", user.getPassword());
-        assertEquals("ADMIN", user.getRole());
+        assertEquals(Role.ADMIN, user.getRole());
         assertEquals(createdAt, user.getCreatedAt());
         assertEquals(updatedAt, user.getUpdatedAt());
     }
