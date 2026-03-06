@@ -2,10 +2,8 @@ package com.mysawit.identity.model;
 
 import com.mysawit.identity.enums.Role;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.core.GrantedAuthority;
 
 import java.time.LocalDateTime;
-import java.util.Collection;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -54,24 +52,19 @@ class UserTest {
     }
 
     @Test
-<<<<<<< HEAD
-    void getAuthoritiesReturnsRoleWhenSet() {
+    void getAuthoritiesReturnsEmptyWhenRoleIsNull() {
         User user = new User();
-        user.setRole(Role.ADMIN);
 
-        Collection<? extends GrantedAuthority> authorities = user.getAuthorities();
-
-        assertEquals(1, authorities.size());
-        assertEquals("ROLE_ADMIN", authorities.iterator().next().getAuthority());
+        assertTrue(user.getAuthorities().isEmpty());
     }
 
     @Test
-    void getAuthoritiesReturnsEmptyListWhenRoleNull() {
+    void getAuthoritiesReturnsRoleAuthorityWhenRoleExists() {
         User user = new User();
+        user.setRole(Role.ADMIN);
 
-        Collection<? extends GrantedAuthority> authorities = user.getAuthorities();
-
-        assertTrue(authorities.isEmpty());
+        assertEquals(1, user.getAuthorities().size());
+        assertEquals("ROLE_ADMIN", user.getAuthorities().iterator().next().getAuthority());
     }
 
     @Test
@@ -85,26 +78,7 @@ class UserTest {
     }
 
     @Test
-    void springSecurityAccountFlagsCanBeDisabled() {
-=======
-    void getAuthoritiesReturnsEmptyWhenRoleIsNull() {
-        User user = new User();
-
-        assertTrue(user.getAuthorities().isEmpty());
-    }
-
-    @Test
-    void getAuthoritiesReturnsRoleAuthorityWhenRoleExists() {
-        User user = new User();
-        user.setRole(Role.MANDOR);
-
-        assertEquals(1, user.getAuthorities().size());
-        assertEquals("ROLE_MANDOR", user.getAuthorities().iterator().next().getAuthority());
-    }
-
-    @Test
     void accountStatusFlagsReflectCurrentValues() {
->>>>>>> 2d7e6d1 (test(identity): close uncovered branches and hit 100% line coverage)
         User user = new User();
         user.setAccountNonExpired(false);
         user.setAccountNonLocked(false);
