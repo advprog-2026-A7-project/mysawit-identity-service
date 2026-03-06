@@ -2,8 +2,10 @@ package com.mysawit.identity.model;
 
 import com.mysawit.identity.enums.Role;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.GrantedAuthority;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -49,5 +51,49 @@ class UserTest {
         user.onUpdate();
 
         assertTrue(user.getUpdatedAt().isAfter(beforeUpdate));
+    }
+
+    @Test
+    void getAuthoritiesReturnsRoleWhenSet() {
+        User user = new User();
+        user.setRole(Role.ADMIN);
+
+        Collection<? extends GrantedAuthority> authorities = user.getAuthorities();
+
+        assertEquals(1, authorities.size());
+        assertEquals("ROLE_ADMIN", authorities.iterator().next().getAuthority());
+    }
+
+    @Test
+    void getAuthoritiesReturnsEmptyListWhenRoleNull() {
+        User user = new User();
+
+        Collection<? extends GrantedAuthority> authorities = user.getAuthorities();
+
+        assertTrue(authorities.isEmpty());
+    }
+
+    @Test
+    void springSecurityAccountFlagsDefaultToTrue() {
+        User user = new User();
+
+        assertTrue(user.isAccountNonExpired());
+        assertTrue(user.isAccountNonLocked());
+        assertTrue(user.isCredentialsNonExpired());
+        assertTrue(user.isEnabled());
+    }
+
+    @Test
+    void springSecurityAccountFlagsCanBeDisabled() {
+        User user = new User();
+        user.setAccountNonExpired(false);
+        user.setAccountNonLocked(false);
+        user.setCredentialsNonExpired(false);
+        user.setEnabled(false);
+
+        assertFalse(user.isAccountNonExpired());
+        assertFalse(user.isAccountNonLocked());
+        assertFalse(user.isCredentialsNonExpired());
+        assertFalse(user.isEnabled());
     }
 }

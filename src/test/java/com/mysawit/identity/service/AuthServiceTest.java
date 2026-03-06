@@ -1,6 +1,8 @@
 package com.mysawit.identity.service;
 
 import com.mysawit.identity.dto.AuthResponse;
+import com.mysawit.identity.dto.GoogleLoginRequest;
+import com.mysawit.identity.dto.GoogleUserInfo;
 import com.mysawit.identity.dto.LoginRequest;
 import com.mysawit.identity.dto.RegisterRequest;
 import com.mysawit.identity.dto.ValidateTokenResponse;
@@ -22,8 +24,11 @@ import com.mysawit.identity.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -353,6 +358,109 @@ class AuthServiceTest {
         );
 
         assertEquals("Invalid or expired token", exception.getMessage());
+    }
+
+    @Test
+    void registerRethrowsDataIntegrityViolationForNonMandorRole() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.BURUH);
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(passwordEncoder.encode("secret123")).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("constraint"));
+
+        assertThrows(DataIntegrityViolationException.class, () -> authService.register(request));
+    }
+
+    @Test
+    void registerWrapsDataIntegrityViolationForMandorRole() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-001");
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(mandorRepository.existsByCertificationNumber("CERT-001")).thenReturn(false);
+        when(passwordEncoder.encode("secret123")).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("constraint"));
+
+        DuplicateCertificationNumberException exception = assertThrows(
+                DuplicateCertificationNumberException.class,
+                () -> authService.register(request)
+        );
+        assertEquals("Certification number already exists", exception.getMessage());
+    }
+
+    @Test
+    void googleLoginLinksExistingUserByEmail() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-1")
+                .email("existing@mail.com")
+                .name("Existing User")
+                .build();
+
+        User existingUser = new User();
+        existingUser.setId("10");
+        existingUser.setName("Existing User");
+        existingUser.setEmail("existing@mail.com");
+        existingUser.setRole(Role.BURUH);
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("existing@mail.com")).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(existingUser)).thenReturn(existingUser);
+        when(jwtTokenProvider.generateToken("10", Role.BURUH)).thenReturn("jwt");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt", response.getToken());
+        assertEquals("google-sub-1", existingUser.getGoogleSub());
+        verify(userRepository).save(existingUser);
+    }
+
+    @Test
+    void googleLoginCreatesNewUserWithNullName() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-2")
+                .email("new@mail.com")
+                .name(null)
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId("20");
+            return saved;
+        });
+        when(jwtTokenProvider.generateToken("20", Role.BURUH)).thenReturn("jwt");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt", response.getToken());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertEquals("new@mail.com", captor.getValue().getName());
+    }
+
+    @Test
+    void buildUserByRoleThrowsForAdminRole() throws Exception {
+        Method buildUserByRole = AuthService.class.getDeclaredMethod("buildUserByRole", RegisterRequest.class, Role.class);
+        buildUserByRole.setAccessible(true);
+
+        RegisterRequest request = registerRequest();
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> buildUserByRole.invoke(authService, request, Role.ADMIN)
+        );
+        assertInstanceOf(InvalidRoleRegistrationException.class, exception.getCause());
     }
 
     private RegisterRequest registerRequest() {
