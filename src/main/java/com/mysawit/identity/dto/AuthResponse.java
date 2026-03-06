@@ -3,12 +3,12 @@ package com.mysawit.identity.dto;
 public class AuthResponse {
     private String token;
     private String type = "Bearer";
-    private Long id;
+    private String id;
     private String username;
     private String email;
     private String role;
     
-    public AuthResponse(String token, Long id, String username, String email, String role) {
+    public AuthResponse(String token, String id, String username, String email, String role) {
         this.token = token;
         this.id = id;
         this.username = username;
@@ -33,11 +33,11 @@ public class AuthResponse {
         this.type = type;
     }
     
-    public Long getId() {
+    public String getId() {
         return id;
     }
     
-    public void setId(Long id) {
+    public void setId(String id) {
         this.id = id;
     }
     
