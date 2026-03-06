@@ -20,7 +20,7 @@ class JwtTokenProviderTest {
 
     @Test
     void generateAndParseTokenWorks() {
-        String token = jwtTokenProvider.generateToken("user", "1", Role.BURUH);
+        String token = jwtTokenProvider.generateToken("1", Role.BURUH);
 
         assertNotNull(token);
         assertEquals("1", jwtTokenProvider.getUsernameFromToken(token));

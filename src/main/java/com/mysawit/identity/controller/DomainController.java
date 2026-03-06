@@ -12,6 +12,9 @@ import java.util.Map;
 @RequestMapping("/api")
 public class DomainController {
 
+    private static final String RESOURCE_KEY = "resource";
+    private static final String ACCESS_KEY = "access";
+
     private final DomainOperationsService domainOperationsService;
 
     public DomainController(DomainOperationsService domainOperationsService) {
@@ -21,24 +24,24 @@ public class DomainController {
     @GetMapping("/harvest")
     public ResponseEntity<Map<String, String>> harvest() {
         return ResponseEntity.ok(Map.of(
-                "resource", "harvest",
-                "access", domainOperationsService.harvest()
+                RESOURCE_KEY, "harvest",
+                ACCESS_KEY, domainOperationsService.harvest()
         ));
     }
 
     @GetMapping("/delivery")
     public ResponseEntity<Map<String, String>> delivery() {
         return ResponseEntity.ok(Map.of(
-                "resource", "delivery",
-                "access", domainOperationsService.delivery()
+                RESOURCE_KEY, "delivery",
+                ACCESS_KEY, domainOperationsService.delivery()
         ));
     }
 
     @GetMapping("/payroll")
     public ResponseEntity<Map<String, String>> payroll() {
         return ResponseEntity.ok(Map.of(
-                "resource", "payroll",
-                "access", domainOperationsService.payroll()
+                RESOURCE_KEY, "payroll",
+                ACCESS_KEY, domainOperationsService.payroll()
         ));
     }
 }

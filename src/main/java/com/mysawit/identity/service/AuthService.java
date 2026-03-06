@@ -77,7 +77,6 @@ public class AuthService {
         }
         
         String token = jwtTokenProvider.generateToken(
-            savedUser.getUsername(), 
             savedUser.getId(), 
             savedUser.getRole()
         );
@@ -100,7 +99,6 @@ public class AuthService {
         }
         
         String token = jwtTokenProvider.generateToken(
-            user.getUsername(), 
             user.getId(), 
             user.getRole()
         );
