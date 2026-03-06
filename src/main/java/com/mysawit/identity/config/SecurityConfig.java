@@ -25,6 +25,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
+
+    private static final String ROLE_ADMIN = "ADMIN";
     
     private final JwtTokenProvider tokenProvider;
 
@@ -43,10 +45,10 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**", "/actuator/**").permitAll()
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .requestMatchers("/api/mandor/**").hasAnyRole("MANDOR", "ADMIN")
-                .requestMatchers("/api/supir/**").hasAnyRole("SUPIR", "ADMIN")
-                .requestMatchers("/api/buruh/**").hasAnyRole("BURUH", "MANDOR", "ADMIN")
+                .requestMatchers("/api/admin/**").hasRole(ROLE_ADMIN)
+                .requestMatchers("/api/mandor/**").hasAnyRole("MANDOR", ROLE_ADMIN)
+                .requestMatchers("/api/supir/**").hasAnyRole("SUPIR", ROLE_ADMIN)
+                .requestMatchers("/api/buruh/**").hasAnyRole("BURUH", "MANDOR", ROLE_ADMIN)
                 .anyRequest().authenticated()
             )
             .addFilterBefore(new JwtAuthenticationFilter(tokenProvider), UsernamePasswordAuthenticationFilter.class);

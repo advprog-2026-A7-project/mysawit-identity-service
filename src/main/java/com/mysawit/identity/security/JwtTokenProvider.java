@@ -23,10 +23,6 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
     
-    public String generateToken(String username, String userId, Role role) {
-        return generateToken(userId, role);
-    }
-
     public String generateToken(String userId, Role role) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpiration);

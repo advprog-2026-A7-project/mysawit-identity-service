@@ -92,7 +92,7 @@ class AuthServiceTest {
         when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
         when(passwordEncoder.encode("secret123")).thenReturn("encoded");
         when(userRepository.save(any(User.class))).thenReturn(saved);
-        when(jwtTokenProvider.generateToken("user", "10", Role.BURUH)).thenReturn("jwt");
+        when(jwtTokenProvider.generateToken("10", Role.BURUH)).thenReturn("jwt");
 
         AuthResponse response = authService.register(request);
 
@@ -125,7 +125,7 @@ class AuthServiceTest {
         when(mandorRepository.existsByCertificationNumber("CERT-001")).thenReturn(false);
         when(passwordEncoder.encode("secret123")).thenReturn("encoded");
         when(userRepository.save(any(User.class))).thenReturn(saved);
-        when(jwtTokenProvider.generateToken("user", "11", Role.MANDOR)).thenReturn("jwt");
+        when(jwtTokenProvider.generateToken("11", Role.MANDOR)).thenReturn("jwt");
 
         AuthResponse response = authService.register(request);
 
@@ -194,7 +194,7 @@ class AuthServiceTest {
         when(mandorRepository.findById("mandor-1")).thenReturn(Optional.of(mandor));
         when(passwordEncoder.encode("secret123")).thenReturn("encoded");
         when(userRepository.save(any(User.class))).thenReturn(saved);
-        when(jwtTokenProvider.generateToken("user", "12", Role.BURUH)).thenReturn("jwt");
+        when(jwtTokenProvider.generateToken("12", Role.BURUH)).thenReturn("jwt");
 
         AuthResponse response = authService.register(request);
 
@@ -238,7 +238,7 @@ class AuthServiceTest {
         when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
         when(passwordEncoder.encode("secret123")).thenReturn("encoded");
         when(userRepository.save(any(User.class))).thenReturn(saved);
-        when(jwtTokenProvider.generateToken("user", "13", Role.SUPIR)).thenReturn("jwt");
+        when(jwtTokenProvider.generateToken("13", Role.SUPIR)).thenReturn("jwt");
 
         AuthResponse response = authService.register(request);
 
@@ -292,7 +292,7 @@ class AuthServiceTest {
 
         when(userRepository.findByEmail("user@mail.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored")).thenReturn(true);
-        when(jwtTokenProvider.generateToken("user", "10", Role.BURUH)).thenReturn("jwt");
+        when(jwtTokenProvider.generateToken("10", Role.BURUH)).thenReturn("jwt");
 
         AuthResponse response = authService.login(request);
 
@@ -314,7 +314,7 @@ class AuthServiceTest {
 
         when(userRepository.findByEmail("user@mail.com")).thenReturn(Optional.of(admin));
         when(passwordEncoder.matches("secret123", "stored")).thenReturn(true);
-        when(jwtTokenProvider.generateToken("admin", "99", Role.ADMIN)).thenReturn("jwt-admin");
+        when(jwtTokenProvider.generateToken("99", Role.ADMIN)).thenReturn("jwt-admin");
 
         AuthResponse response = authService.login(request);
 
