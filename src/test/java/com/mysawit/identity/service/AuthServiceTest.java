@@ -5,7 +5,18 @@ import com.mysawit.identity.dto.LoginRequest;
 import com.mysawit.identity.dto.RegisterRequest;
 import com.mysawit.identity.dto.ValidateTokenResponse;
 import com.mysawit.identity.enums.Role;
+import com.mysawit.identity.exception.DuplicateCertificationNumberException;
+import com.mysawit.identity.exception.DuplicateEmailException;
+import com.mysawit.identity.exception.InvalidCredentialsException;
+import com.mysawit.identity.exception.InvalidMandorException;
+import com.mysawit.identity.exception.InvalidRoleRegistrationException;
+import com.mysawit.identity.exception.InvalidTokenException;
+import com.mysawit.identity.exception.MissingMandorCertificationException;
+import com.mysawit.identity.model.Buruh;
+import com.mysawit.identity.model.Mandor;
+import com.mysawit.identity.model.Supir;
 import com.mysawit.identity.model.User;
+import com.mysawit.identity.repository.MandorRepository;
 import com.mysawit.identity.repository.UserRepository;
 import com.mysawit.identity.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,16 +32,20 @@ import static org.mockito.Mockito.*;
 class AuthServiceTest {
 
     private UserRepository userRepository;
+    private MandorRepository mandorRepository;
     private PasswordEncoder passwordEncoder;
     private JwtTokenProvider jwtTokenProvider;
+    private GoogleTokenVerifierService googleTokenVerifierService;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
+        mandorRepository = mock(MandorRepository.class);
         passwordEncoder = mock(PasswordEncoder.class);
         jwtTokenProvider = mock(JwtTokenProvider.class);
-        authService = new AuthService(userRepository, passwordEncoder, jwtTokenProvider);
+        googleTokenVerifierService = mock(GoogleTokenVerifierService.class);
+        authService = new AuthService(userRepository, mandorRepository, passwordEncoder, jwtTokenProvider, googleTokenVerifierService);
     }
 
     @Test
@@ -38,7 +53,7 @@ class AuthServiceTest {
         RegisterRequest request = registerRequest();
         when(userRepository.existsByEmail("user@mail.com")).thenReturn(true);
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> authService.register(request));
+        DuplicateEmailException exception = assertThrows(DuplicateEmailException.class, () -> authService.register(request));
 
         assertEquals("Email already exists", exception.getMessage());
         verify(userRepository, never()).save(any());
@@ -50,16 +65,19 @@ class AuthServiceTest {
         request.setRole(Role.ADMIN);
         when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> authService.register(request));
+        InvalidRoleRegistrationException exception = assertThrows(
+                InvalidRoleRegistrationException.class,
+                () -> authService.register(request)
+        );
 
         assertEquals("Cannot self-register as ADMIN", exception.getMessage());
         verify(userRepository, never()).save(any());
     }
 
     @Test
-    void registerCreatesUserAndReturnsTokenWithDefaultRole() {
+    void registerCreatesBuruhAndReturnsTokenWithDefaultRole() {
         RegisterRequest request = registerRequest();
-        User saved = new User();
+        Buruh saved = new Buruh();
         saved.setId("10");
         saved.setUsername("user");
         saved.setName("user");
@@ -79,8 +97,151 @@ class AuthServiceTest {
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
+        assertInstanceOf(Buruh.class, captor.getValue());
         assertEquals("encoded", captor.getValue().getPassword());
         assertEquals(Role.BURUH, captor.getValue().getRole());
+    }
+
+    @Test
+    void registerCreatesMandorWhenRoleMandor() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-001");
+
+        Mandor saved = new Mandor();
+        saved.setId("11");
+        saved.setUsername("user");
+        saved.setName("user");
+        saved.setEmail("user@mail.com");
+        saved.setRole(Role.MANDOR);
+        saved.setCertificationNumber("CERT-001");
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(mandorRepository.existsByCertificationNumber("CERT-001")).thenReturn(false);
+        when(passwordEncoder.encode("secret123")).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenReturn(saved);
+        when(jwtTokenProvider.generateToken("user", "11", Role.MANDOR)).thenReturn("jwt");
+
+        AuthResponse response = authService.register(request);
+
+        assertEquals("jwt", response.getToken());
+        assertEquals("MANDOR", response.getRole());
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertInstanceOf(Mandor.class, captor.getValue());
+        assertEquals("CERT-001", ((Mandor) captor.getValue()).getCertificationNumber());
+    }
+
+    @Test
+    void registerThrowsWhenMandorCertificationMissing() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber(" ");
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+
+        MissingMandorCertificationException exception = assertThrows(
+                MissingMandorCertificationException.class,
+                () -> authService.register(request)
+        );
+
+        assertEquals("Certification number is required for MANDOR", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void registerThrowsWhenCertificationNumberAlreadyExists() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-001");
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(mandorRepository.existsByCertificationNumber("CERT-001")).thenReturn(true);
+
+        DuplicateCertificationNumberException exception = assertThrows(
+                DuplicateCertificationNumberException.class,
+                () -> authService.register(request)
+        );
+
+        assertEquals("Certification number already exists", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void registerCreatesBuruhWithMandorWhenMandorIdValid() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.BURUH);
+        request.setMandorId("mandor-1");
+
+        Mandor mandor = new Mandor();
+        mandor.setId("mandor-1");
+        mandor.setRole(Role.MANDOR);
+
+        Buruh saved = new Buruh();
+        saved.setId("12");
+        saved.setUsername("user");
+        saved.setName("user");
+        saved.setEmail("user@mail.com");
+        saved.setRole(Role.BURUH);
+        saved.setMandor(mandor);
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(mandorRepository.findById("mandor-1")).thenReturn(Optional.of(mandor));
+        when(passwordEncoder.encode("secret123")).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenReturn(saved);
+        when(jwtTokenProvider.generateToken("user", "12", Role.BURUH)).thenReturn("jwt");
+
+        AuthResponse response = authService.register(request);
+
+        assertEquals("jwt", response.getToken());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertInstanceOf(Buruh.class, captor.getValue());
+        assertNotNull(((Buruh) captor.getValue()).getMandor());
+        assertEquals("mandor-1", ((Buruh) captor.getValue()).getMandor().getId());
+    }
+
+    @Test
+    void registerThrowsWhenMandorIdInvalid() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.BURUH);
+        request.setMandorId("missing-mandor");
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(mandorRepository.findById("missing-mandor")).thenReturn(Optional.empty());
+
+        InvalidMandorException exception = assertThrows(InvalidMandorException.class, () -> authService.register(request));
+
+        assertEquals("Invalid mandorId", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void registerCreatesSupirWhenRoleSupir() {
+        RegisterRequest request = registerRequest();
+        request.setRole(Role.SUPIR);
+        request.setKebunId("kebun-1");
+
+        Supir saved = new Supir();
+        saved.setId("13");
+        saved.setUsername("user");
+        saved.setName("user");
+        saved.setEmail("user@mail.com");
+        saved.setRole(Role.SUPIR);
+        saved.setKebunId("kebun-1");
+
+        when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
+        when(passwordEncoder.encode("secret123")).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenReturn(saved);
+        when(jwtTokenProvider.generateToken("user", "13", Role.SUPIR)).thenReturn("jwt");
+
+        AuthResponse response = authService.register(request);
+
+        assertEquals("SUPIR", response.getRole());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertInstanceOf(Supir.class, captor.getValue());
+        assertEquals("kebun-1", ((Supir) captor.getValue()).getKebunId());
     }
 
     @Test
@@ -88,9 +249,12 @@ class AuthServiceTest {
         LoginRequest request = loginRequest();
         when(userRepository.findByEmail("user@mail.com")).thenReturn(Optional.empty());
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> authService.login(request));
+        InvalidCredentialsException exception = assertThrows(
+                InvalidCredentialsException.class,
+                () -> authService.login(request)
+        );
 
-        assertEquals("Invalid username or password", exception.getMessage());
+        assertEquals("Invalid email or password", exception.getMessage());
     }
 
     @Test
@@ -102,9 +266,12 @@ class AuthServiceTest {
         when(userRepository.findByEmail("user@mail.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored")).thenReturn(false);
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> authService.login(request));
+        InvalidCredentialsException exception = assertThrows(
+                InvalidCredentialsException.class,
+                () -> authService.login(request)
+        );
 
-        assertEquals("Invalid username or password", exception.getMessage());
+        assertEquals("Invalid email or password", exception.getMessage());
     }
 
     @Test
@@ -130,6 +297,27 @@ class AuthServiceTest {
     }
 
     @Test
+    void loginReturnsAuthResponseWhenAdminValid() {
+        LoginRequest request = loginRequest();
+        User admin = new User();
+        admin.setId("99");
+        admin.setUsername("admin");
+        admin.setName("admin");
+        admin.setEmail("user@mail.com");
+        admin.setPassword("stored");
+        admin.setRole(Role.ADMIN);
+
+        when(userRepository.findByEmail("user@mail.com")).thenReturn(Optional.of(admin));
+        when(passwordEncoder.matches("secret123", "stored")).thenReturn(true);
+        when(jwtTokenProvider.generateToken("admin", "99", Role.ADMIN)).thenReturn("jwt-admin");
+
+        AuthResponse response = authService.login(request);
+
+        assertEquals("jwt-admin", response.getToken());
+        assertEquals("ADMIN", response.getRole());
+    }
+
+    @Test
     void validateTokenReturnsResponseWhenTokenValid() {
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUsernameFromToken("valid-token")).thenReturn("user@mail.com");
@@ -144,8 +332,8 @@ class AuthServiceTest {
     void validateTokenThrowsWhenTokenInvalid() {
         when(jwtTokenProvider.validateToken("invalid-token")).thenReturn(false);
 
-        RuntimeException exception = assertThrows(
-                RuntimeException.class,
+        InvalidTokenException exception = assertThrows(
+                InvalidTokenException.class,
                 () -> authService.validateToken("invalid-token")
         );
 
@@ -159,8 +347,8 @@ class AuthServiceTest {
         when(jwtTokenProvider.getUsernameFromToken("valid-token"))
                 .thenThrow(new RuntimeException("parse failed"));
 
-        RuntimeException exception = assertThrows(
-                RuntimeException.class,
+        InvalidTokenException exception = assertThrows(
+                InvalidTokenException.class,
                 () -> authService.validateToken("valid-token")
         );
 
@@ -177,7 +365,7 @@ class AuthServiceTest {
 
     private LoginRequest loginRequest() {
         LoginRequest request = new LoginRequest();
-        request.setUsername("user@mail.com");
+        request.setEmail("user@mail.com");
         request.setPassword("secret123");
         return request;
     }

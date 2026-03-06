@@ -2,6 +2,7 @@ package com.mysawit.identity.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CorsConfigurer;
@@ -24,7 +25,7 @@ class SecurityConfigTest {
 
     @Test
     void filterChainConfiguresHttpSecurity() throws Exception {
-        SecurityConfig securityConfig = new SecurityConfig();
+        SecurityConfig securityConfig = new SecurityConfig(mock(com.mysawit.identity.security.JwtTokenProvider.class));
         ReflectionTestUtils.setField(securityConfig, "allowedOrigins", "http://localhost:3000,http://localhost:5173");
 
         HttpSecurity http = mock(HttpSecurity.class);
@@ -75,18 +76,31 @@ class SecurityConfigTest {
                     mock(AuthorizeHttpRequestsConfigurer.AuthorizedUrl.class);
 
             when(registry.requestMatchers(anyString(), anyString())).thenReturn(authorizedUrl);
+            when(registry.requestMatchers(anyString())).thenReturn(authorizedUrl);
             when(authorizedUrl.permitAll()).thenReturn(registry);
+            when(authorizedUrl.hasRole(anyString())).thenReturn(registry);
+            when(authorizedUrl.hasAnyRole(any(String[].class))).thenReturn(registry);
             when(registry.anyRequest()).thenReturn(authorizedUrl);
             when(authorizedUrl.authenticated()).thenReturn(registry);
 
             customizer.customize(registry);
 
             verify(registry).requestMatchers("/api/auth/**", "/actuator/**");
+            verify(registry).requestMatchers("/api/admin/**");
+            verify(registry).requestMatchers("/api/mandor/**");
+            verify(registry).requestMatchers("/api/supir/**");
+            verify(registry).requestMatchers("/api/buruh/**");
             verify(authorizedUrl).permitAll();
+            verify(authorizedUrl).hasRole("ADMIN");
+            verify(authorizedUrl).hasAnyRole("MANDOR", "ADMIN");
+            verify(authorizedUrl).hasAnyRole("SUPIR", "ADMIN");
+            verify(authorizedUrl).hasAnyRole("BURUH", "MANDOR", "ADMIN");
             verify(registry).anyRequest();
             verify(authorizedUrl).authenticated();
             return http;
         });
+
+        when(http.addFilterBefore(any(jakarta.servlet.Filter.class), any(Class.class))).thenReturn(http);
 
         when(http.build()).thenReturn(expectedFilterChain);
 
@@ -97,7 +111,7 @@ class SecurityConfigTest {
 
     @Test
     void corsConfigurationSourceBuildsExpectedConfiguration() {
-        SecurityConfig securityConfig = new SecurityConfig();
+        SecurityConfig securityConfig = new SecurityConfig(mock(com.mysawit.identity.security.JwtTokenProvider.class));
         ReflectionTestUtils.setField(securityConfig, "allowedOrigins", "http://localhost:3000,http://localhost:5173");
 
         CorsConfigurationSource source = securityConfig.corsConfigurationSource();
@@ -116,12 +130,20 @@ class SecurityConfigTest {
 
     @Test
     void passwordEncoderHashesAndMatches() {
-        SecurityConfig securityConfig = new SecurityConfig();
+        SecurityConfig securityConfig = new SecurityConfig(mock(com.mysawit.identity.security.JwtTokenProvider.class));
 
         PasswordEncoder encoder = securityConfig.passwordEncoder();
 
         String hashed = encoder.encode("secret123");
         assertNotEquals("secret123", hashed);
         assertTrue(encoder.matches("secret123", hashed));
+    }
+
+    @Test
+    void enableMethodSecurityPrePostIsActive() {
+        EnableMethodSecurity annotation = SecurityConfig.class.getAnnotation(EnableMethodSecurity.class);
+
+        assertNotNull(annotation);
+        assertTrue(annotation.prePostEnabled());
     }
 }

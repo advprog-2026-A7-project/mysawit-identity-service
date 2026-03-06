@@ -1,6 +1,9 @@
 package com.mysawit.identity.integration;
 
 import com.mysawit.identity.enums.Role;
+import com.mysawit.identity.model.Buruh;
+import com.mysawit.identity.model.Mandor;
+import com.mysawit.identity.model.Supir;
 import com.mysawit.identity.model.User;
 import com.mysawit.identity.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -63,6 +66,85 @@ class UserRepositoryIntegrationTest {
         assertThrows(Exception.class, () -> {
             userRepository.saveAndFlush(dup);
         });
+    }
+
+    @Test
+    void saveMandorPersistsUserAndMandorTables() {
+        Mandor mandor = new Mandor();
+        mandor.setUsername("mandor1");
+        mandor.setName("mandor1");
+        mandor.setEmail("mandor1@mail.com");
+        mandor.setPassword("encoded");
+        mandor.setRole(Role.MANDOR);
+        mandor.setCertificationNumber("CERT-001");
+
+        Mandor saved = userRepository.saveAndFlush(mandor);
+
+        Number usersCount = (Number) entityManager.getEntityManager()
+                .createNativeQuery("SELECT COUNT(*) FROM users WHERE id = :id")
+                .setParameter("id", saved.getId())
+                .getSingleResult();
+        Number mandorsCount = (Number) entityManager.getEntityManager()
+                .createNativeQuery("SELECT COUNT(*) FROM mandors WHERE id = :id")
+                .setParameter("id", saved.getId())
+                .getSingleResult();
+
+        assertEquals(1L, usersCount.longValue());
+        assertEquals(1L, mandorsCount.longValue());
+    }
+
+    @Test
+    void saveSupirPersistsUserAndSupirTables() {
+        Supir supir = new Supir();
+        supir.setUsername("supir1");
+        supir.setName("supir1");
+        supir.setEmail("supir1@mail.com");
+        supir.setPassword("encoded");
+        supir.setRole(Role.SUPIR);
+        supir.setKebunId("kebun-001");
+
+        Supir saved = userRepository.saveAndFlush(supir);
+
+        Number usersCount = (Number) entityManager.getEntityManager()
+                .createNativeQuery("SELECT COUNT(*) FROM users WHERE id = :id")
+                .setParameter("id", saved.getId())
+                .getSingleResult();
+        Number supirsCount = (Number) entityManager.getEntityManager()
+                .createNativeQuery("SELECT COUNT(*) FROM supirs WHERE id = :id")
+                .setParameter("id", saved.getId())
+                .getSingleResult();
+
+        assertEquals(1L, usersCount.longValue());
+        assertEquals(1L, supirsCount.longValue());
+    }
+
+    @Test
+    void saveBuruhWithMandorPersistsRelation() {
+        Mandor mandor = new Mandor();
+        mandor.setUsername("mandor2");
+        mandor.setName("mandor2");
+        mandor.setEmail("mandor2@mail.com");
+        mandor.setPassword("encoded");
+        mandor.setRole(Role.MANDOR);
+        mandor.setCertificationNumber("CERT-002");
+        Mandor savedMandor = entityManager.persistFlushFind(mandor);
+
+        Buruh buruh = new Buruh();
+        buruh.setUsername("buruh1");
+        buruh.setName("buruh1");
+        buruh.setEmail("buruh1@mail.com");
+        buruh.setPassword("encoded");
+        buruh.setRole(Role.BURUH);
+        buruh.setMandor(savedMandor);
+
+        Buruh savedBuruh = userRepository.saveAndFlush(buruh);
+
+        String mandorId = (String) entityManager.getEntityManager()
+                .createNativeQuery("SELECT mandor_id FROM buruhs WHERE id = :id")
+                .setParameter("id", savedBuruh.getId())
+                .getSingleResult();
+
+        assertEquals(savedMandor.getId(), mandorId);
     }
 
     private User buildUser(String username, String email) {

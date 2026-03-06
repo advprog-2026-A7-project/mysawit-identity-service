@@ -5,6 +5,7 @@ import com.mysawit.identity.dto.LoginRequest;
 import com.mysawit.identity.dto.RegisterRequest;
 import com.mysawit.identity.dto.ValidateTokenRequest;
 import com.mysawit.identity.dto.ValidateTokenResponse;
+import com.mysawit.identity.exception.InvalidCredentialsException;
 import com.mysawit.identity.service.AuthService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,47 +31,48 @@ class AuthControllerTest {
     @Test
     void registerReturnsSuccessResponse() {
         RegisterRequest request = new RegisterRequest();
-        AuthResponse responseBody = new AuthResponse("token", "1", "user", "user@mail.com", "USER");
+        AuthResponse responseBody = new AuthResponse("token", "1", "user", "user@mail.com", "BURUH");
         when(authService.register(request)).thenReturn(responseBody);
 
-        ResponseEntity<?> response = authController.register(request);
+        ResponseEntity<AuthResponse> response = authController.register(request);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertSame(responseBody, response.getBody());
     }
 
     @Test
-    void registerReturnsBadRequestOnError() {
+    void registerPropagatesException() {
         RegisterRequest request = new RegisterRequest();
         when(authService.register(request)).thenThrow(new RuntimeException("exists"));
 
-        ResponseEntity<?> response = authController.register(request);
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> authController.register(request));
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("exists", ((Map<?, ?>) response.getBody()).get("error"));
+        assertEquals("exists", exception.getMessage());
     }
 
     @Test
     void loginReturnsSuccessResponse() {
         LoginRequest request = new LoginRequest();
-        AuthResponse responseBody = new AuthResponse("token", "1", "user", "user@mail.com", "USER");
+        AuthResponse responseBody = new AuthResponse("token", "1", "user", "user@mail.com", "BURUH");
         when(authService.login(request)).thenReturn(responseBody);
 
-        ResponseEntity<?> response = authController.login(request);
+        ResponseEntity<AuthResponse> response = authController.login(request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(responseBody, response.getBody());
     }
 
     @Test
-    void loginReturnsBadRequestOnError() {
+    void loginPropagatesException() {
         LoginRequest request = new LoginRequest();
-        when(authService.login(request)).thenThrow(new RuntimeException("invalid"));
+        when(authService.login(request)).thenThrow(new InvalidCredentialsException("Invalid email or password"));
 
-        ResponseEntity<?> response = authController.login(request);
+        InvalidCredentialsException exception = assertThrows(
+                InvalidCredentialsException.class,
+                () -> authController.login(request)
+        );
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("invalid", ((Map<?, ?>) response.getBody()).get("error"));
+        assertEquals("Invalid email or password", exception.getMessage());
     }
 
     @Test
@@ -80,23 +82,10 @@ class AuthControllerTest {
         ValidateTokenResponse responseBody = new ValidateTokenResponse(true, "user@mail.com");
         when(authService.validateToken("valid-token")).thenReturn(responseBody);
 
-        ResponseEntity<?> response = authController.validate(request);
+        ResponseEntity<ValidateTokenResponse> response = authController.validate(request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(responseBody, response.getBody());
-    }
-
-    @Test
-    void validateReturnsUnauthorizedOnError() {
-        ValidateTokenRequest request = new ValidateTokenRequest();
-        request.setToken("invalid-token");
-        when(authService.validateToken("invalid-token"))
-                .thenThrow(new RuntimeException("Invalid or expired token"));
-
-        ResponseEntity<?> response = authController.validate(request);
-
-        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        assertEquals("Invalid or expired token", ((Map<?, ?>) response.getBody()).get("error"));
     }
 
     @Test

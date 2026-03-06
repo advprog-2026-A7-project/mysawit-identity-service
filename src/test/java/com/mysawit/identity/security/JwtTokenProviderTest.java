@@ -23,8 +23,23 @@ class JwtTokenProviderTest {
         String token = jwtTokenProvider.generateToken("user", "1", Role.BURUH);
 
         assertNotNull(token);
-        assertEquals("user", jwtTokenProvider.getUsernameFromToken(token));
+        assertEquals("1", jwtTokenProvider.getUsernameFromToken(token));
         assertTrue(jwtTokenProvider.validateToken(token));
+    }
+
+    @Test
+    void parseInternalTokenAndVerifyClaims() {
+        String token = jwtTokenProvider.generateToken("1", Role.BURUH);
+
+        io.jsonwebtoken.Claims claims = io.jsonwebtoken.Jwts.parser()
+                .verifyWith((javax.crypto.SecretKey) ReflectionTestUtils.invokeMethod(jwtTokenProvider, "getSigningKey"))
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        assertEquals("1", claims.getSubject());
+        assertEquals("1", claims.get("userId"));
+        assertEquals("BURUH", claims.get("role"));
     }
 
     @Test
