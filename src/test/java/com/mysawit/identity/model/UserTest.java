@@ -54,6 +54,7 @@ class UserTest {
     }
 
     @Test
+<<<<<<< HEAD
     void getAuthoritiesReturnsRoleWhenSet() {
         User user = new User();
         user.setRole(Role.ADMIN);
@@ -85,6 +86,25 @@ class UserTest {
 
     @Test
     void springSecurityAccountFlagsCanBeDisabled() {
+=======
+    void getAuthoritiesReturnsEmptyWhenRoleIsNull() {
+        User user = new User();
+
+        assertTrue(user.getAuthorities().isEmpty());
+    }
+
+    @Test
+    void getAuthoritiesReturnsRoleAuthorityWhenRoleExists() {
+        User user = new User();
+        user.setRole(Role.MANDOR);
+
+        assertEquals(1, user.getAuthorities().size());
+        assertEquals("ROLE_MANDOR", user.getAuthorities().iterator().next().getAuthority());
+    }
+
+    @Test
+    void accountStatusFlagsReflectCurrentValues() {
+>>>>>>> 2d7e6d1 (test(identity): close uncovered branches and hit 100% line coverage)
         User user = new User();
         user.setAccountNonExpired(false);
         user.setAccountNonLocked(false);

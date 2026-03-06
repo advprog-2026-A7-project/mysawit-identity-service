@@ -35,6 +35,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Validate and normalize SonarCloud configuration
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           CLEAN_SONAR_TOKEN="$(printf '%s' "${SONAR_TOKEN_RAW:-}" | tr -d '\r\n')"
@@ -56,6 +57,7 @@ jobs:
             build/test-results
 
       - name: SonarCloud Scan
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,7 +74,7 @@ jobs:
             -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml
 
       - name: Fail if SonarCloud Quality Gate fails
-        if: github.event_name == 'push' && github.ref_name == 'main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
         run: |
