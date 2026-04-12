@@ -8,9 +8,10 @@ class AuthResponseTest {
 
     @Test
     void constructorAndSettersWork() {
-        AuthResponse response = new AuthResponse("token", "1", "user", "user@mail.com", "USER");
+        AuthResponse response = new AuthResponse("token", "refresh", "1", "user", "user@mail.com", "USER");
 
         assertEquals("token", response.getToken());
+        assertEquals("refresh", response.getRefreshToken());
         assertEquals("Bearer", response.getType());
         assertEquals("1", response.getId());
         assertEquals("user", response.getUsername());
@@ -18,6 +19,7 @@ class AuthResponseTest {
         assertEquals("USER", response.getRole());
 
         response.setToken("new-token");
+        response.setRefreshToken("new-refresh");
         response.setType("Custom");
         response.setId("2");
         response.setUsername("new-user");
@@ -25,6 +27,7 @@ class AuthResponseTest {
         response.setRole("ADMIN");
 
         assertEquals("new-token", response.getToken());
+        assertEquals("new-refresh", response.getRefreshToken());
         assertEquals("Custom", response.getType());
         assertEquals("2", response.getId());
         assertEquals("new-user", response.getUsername());

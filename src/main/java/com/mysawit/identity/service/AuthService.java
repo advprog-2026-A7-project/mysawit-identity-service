@@ -9,46 +9,63 @@ import com.mysawit.identity.dto.GoogleUserInfo;
 import com.mysawit.identity.enums.Role;
 import com.mysawit.identity.exception.DuplicateCertificationNumberException;
 import com.mysawit.identity.exception.DuplicateEmailException;
+import com.mysawit.identity.exception.GoogleSubAlreadyLinkedException;
 import com.mysawit.identity.exception.InvalidCredentialsException;
 import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
 import com.mysawit.identity.exception.InvalidTokenException;
 import com.mysawit.identity.exception.MissingMandorCertificationException;
+import com.mysawit.identity.exception.RefreshTokenExpiredException;
+import com.mysawit.identity.exception.UserNotFoundException;
 import com.mysawit.identity.model.Buruh;
 import com.mysawit.identity.model.Mandor;
+import com.mysawit.identity.model.RefreshToken;
 import com.mysawit.identity.model.Supir;
 import com.mysawit.identity.model.User;
 import com.mysawit.identity.repository.MandorRepository;
+import com.mysawit.identity.repository.RefreshTokenRepository;
 import com.mysawit.identity.repository.UserRepository;
 import com.mysawit.identity.security.JwtTokenProvider;
+import com.mysawit.identity.event.UserRegisteredEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
 
 @Service
 public class AuthService {
-    
+
     private final UserRepository userRepository;
     private final MandorRepository mandorRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final GoogleTokenVerifierService googleTokenVerifierService;
-    
+    private final ApplicationEventPublisher eventPublisher;
+
     public AuthService(
             UserRepository userRepository,
             MandorRepository mandorRepository,
+            RefreshTokenRepository refreshTokenRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
-            GoogleTokenVerifierService googleTokenVerifierService
+            GoogleTokenVerifierService googleTokenVerifierService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.userRepository = userRepository;
         this.mandorRepository = mandorRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.googleTokenVerifierService = googleTokenVerifierService;
+        this.eventPublisher = eventPublisher;
     }
-    
+
+    @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateEmailException("Email already exists");
@@ -58,14 +75,14 @@ public class AuthService {
         if (role == Role.ADMIN) {
             throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
         }
-        
+
         User user = buildUserByRole(request, role);
         user.setName(request.getUsername());
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(role);
-        
+
         User savedUser;
         try {
             savedUser = userRepository.save(user);
@@ -75,46 +92,30 @@ public class AuthService {
             }
             throw e;
         }
-        
-        String token = jwtTokenProvider.generateToken(
-            savedUser.getId(), 
-            savedUser.getRole()
-        );
-        
-        return new AuthResponse(
-            token, 
-            savedUser.getId(), 
-            savedUser.getName(), 
-            savedUser.getEmail(), 
-            savedUser.getRole().name()
-        );
+
+        eventPublisher.publishEvent(new UserRegisteredEvent(
+                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()));
+
+        return buildAuthResponse(savedUser);
     }
-    
+
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
-        
+
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new InvalidCredentialsException("Invalid email or password");
         }
-        
-        String token = jwtTokenProvider.generateToken(
-            user.getId(), 
-            user.getRole()
-        );
-        
-        return new AuthResponse(
-            token, 
-            user.getId(), 
-            user.getName(), 
-            user.getEmail(), 
-            user.getRole().name()
-        );
+
+        return buildAuthResponse(user);
     }
 
+    @Transactional
     public AuthResponse googleLogin(GoogleLoginRequest request) {
         GoogleUserInfo googleUserInfo = googleTokenVerifierService.verifyToken(request.getIdToken());
-        
+
+        boolean[] isNewUser = {false};
+
         User user = userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
                 .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail())
                         .map(existingUser -> {
@@ -122,6 +123,7 @@ public class AuthService {
                             return userRepository.save(existingUser);
                         })
                         .orElseGet(() -> {
+                            isNewUser[0] = true;
                             Buruh newUser = new Buruh();
                             newUser.setEmail(googleUserInfo.getEmail());
                             newUser.setName(googleUserInfo.getName() != null ? googleUserInfo.getName() : googleUserInfo.getEmail());
@@ -132,19 +134,13 @@ public class AuthService {
                             return userRepository.save(newUser);
                         })
                 );
-        
-        String token = jwtTokenProvider.generateToken(
-            user.getId(), 
-            user.getRole()
-        );
-        
-        return new AuthResponse(
-            token, 
-            user.getId(), 
-            user.getName(), 
-            user.getEmail(), 
-            user.getRole().name()
-        );
+
+        if (isNewUser[0]) {
+            eventPublisher.publishEvent(new UserRegisteredEvent(
+                    user.getId(), user.getEmail(), user.getRole().name()));
+        }
+
+        return buildAuthResponse(user);
     }
 
     public ValidateTokenResponse validateToken(String token) {
@@ -161,6 +157,78 @@ public class AuthService {
         } catch (Exception e) {
             throw new InvalidTokenException("Invalid or expired token");
         }
+    }
+
+    @Transactional
+    public AuthResponse refreshToken(String refreshTokenValue) {
+        RefreshToken refreshToken = refreshTokenRepository.findByToken(refreshTokenValue)
+                .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
+
+        if (refreshToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            refreshTokenRepository.delete(refreshToken);
+            throw new RefreshTokenExpiredException("Refresh token has expired");
+        }
+
+        refreshTokenRepository.delete(refreshToken);
+
+        User user = userRepository.findById(refreshToken.getUserId())
+                .orElseThrow(() -> new InvalidTokenException("User not found for refresh token"));
+
+        return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public void logout(String refreshTokenValue) {
+        refreshTokenRepository.findByToken(refreshTokenValue)
+                .ifPresent(refreshTokenRepository::delete);
+    }
+
+    @Transactional
+    public void linkGoogle(String userId, String idToken) {
+        GoogleUserInfo googleUserInfo = googleTokenVerifierService.verifyToken(idToken);
+
+        userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
+                .ifPresent(existingUser -> {
+                    if (!existingUser.getId().equals(userId)) {
+                        throw new GoogleSubAlreadyLinkedException("This Google account is already linked to another user");
+                    }
+                });
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        user.setGoogleSub(googleUserInfo.getGoogleSub());
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void setPassword(String userId, String rawPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        user.setPassword(passwordEncoder.encode(rawPassword));
+        userRepository.save(user);
+    }
+
+    private AuthResponse buildAuthResponse(User user) {
+        String token = jwtTokenProvider.generateToken(user.getId(), user.getRole());
+        String refreshTokenValue = jwtTokenProvider.generateRefreshTokenValue();
+
+        RefreshToken refreshToken = RefreshToken.builder()
+                .token(refreshTokenValue)
+                .userId(user.getId())
+                .expiresAt(LocalDateTime.now().plusSeconds(jwtTokenProvider.getRefreshExpiration() / 1000))
+                .build();
+        refreshTokenRepository.save(refreshToken);
+
+        return new AuthResponse(
+                token,
+                refreshTokenValue,
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getRole().name()
+        );
     }
 
     private User buildUserByRole(RegisterRequest request, Role role) {

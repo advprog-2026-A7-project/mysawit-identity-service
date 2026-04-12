@@ -1,13 +1,19 @@
 package com.mysawit.identity.advice;
 
 import com.mysawit.identity.dto.ErrorResponse;
+import com.mysawit.identity.exception.CannotDeleteAdminUtamaException;
+import com.mysawit.identity.exception.CannotDeleteSelfException;
 import com.mysawit.identity.exception.DuplicateCertificationNumberException;
 import com.mysawit.identity.exception.DuplicateEmailException;
+import com.mysawit.identity.exception.GoogleSubAlreadyLinkedException;
 import com.mysawit.identity.exception.InvalidCredentialsException;
 import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
 import com.mysawit.identity.exception.InvalidTokenException;
+import com.mysawit.identity.exception.InvalidUserRoleException;
 import com.mysawit.identity.exception.MissingMandorCertificationException;
+import com.mysawit.identity.exception.RefreshTokenExpiredException;
+import com.mysawit.identity.exception.UserNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -27,7 +33,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             InvalidMandorException.class,
             InvalidRoleRegistrationException.class,
-            MissingMandorCertificationException.class
+            MissingMandorCertificationException.class,
+            InvalidUserRoleException.class
     })
     public ResponseEntity<ErrorResponse> handleBadRequest(RuntimeException exception, HttpServletRequest request) {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI());
@@ -49,15 +56,30 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             InvalidCredentialsException.class,
-            InvalidTokenException.class
+            InvalidTokenException.class,
+            RefreshTokenExpiredException.class
     })
     public ResponseEntity<ErrorResponse> handleUnauthorized(RuntimeException exception, HttpServletRequest request) {
         return buildErrorResponse(HttpStatus.UNAUTHORIZED, exception.getMessage(), request.getRequestURI());
     }
 
     @ExceptionHandler({
+            CannotDeleteSelfException.class,
+            CannotDeleteAdminUtamaException.class
+    })
+    public ResponseEntity<ErrorResponse> handleForbiddenAction(RuntimeException exception, HttpServletRequest request) {
+        return buildErrorResponse(HttpStatus.FORBIDDEN, exception.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException exception, HttpServletRequest request) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler({
             DuplicateEmailException.class,
-            DuplicateCertificationNumberException.class
+            DuplicateCertificationNumberException.class,
+            GoogleSubAlreadyLinkedException.class
     })
     public ResponseEntity<ErrorResponse> handleConflict(RuntimeException exception, HttpServletRequest request) {
         return buildErrorResponse(HttpStatus.CONFLICT, exception.getMessage(), request.getRequestURI());

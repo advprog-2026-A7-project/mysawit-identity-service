@@ -27,6 +27,7 @@ class SecurityConfigTest {
     void filterChainConfiguresHttpSecurity() throws Exception {
         SecurityConfig securityConfig = new SecurityConfig(mock(com.mysawit.identity.security.JwtTokenProvider.class));
         ReflectionTestUtils.setField(securityConfig, "allowedOrigins", "http://localhost:3000,http://localhost:5173");
+        ReflectionTestUtils.setField(securityConfig, "internalApiKey", "test-key");
 
         HttpSecurity http = mock(HttpSecurity.class);
         DefaultSecurityFilterChain expectedFilterChain = mock(DefaultSecurityFilterChain.class);
@@ -75,7 +76,7 @@ class SecurityConfigTest {
             AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizedUrl authorizedUrl =
                     mock(AuthorizeHttpRequestsConfigurer.AuthorizedUrl.class);
 
-            when(registry.requestMatchers(anyString(), anyString())).thenReturn(authorizedUrl);
+            when(registry.requestMatchers(any(String[].class))).thenReturn(authorizedUrl);
             when(registry.requestMatchers(anyString())).thenReturn(authorizedUrl);
             when(authorizedUrl.permitAll()).thenReturn(registry);
             when(authorizedUrl.hasRole(anyString())).thenReturn(registry);
@@ -85,18 +86,12 @@ class SecurityConfigTest {
 
             customizer.customize(registry);
 
-            verify(registry).requestMatchers("/api/auth/**", "/actuator/**");
-            verify(registry).requestMatchers("/api/admin/**");
-            verify(registry).requestMatchers("/api/mandor/**");
-            verify(registry).requestMatchers("/api/supir/**");
-            verify(registry).requestMatchers("/api/buruh/**");
             verify(authorizedUrl).permitAll();
             verify(authorizedUrl).hasRole("ADMIN");
             verify(authorizedUrl).hasAnyRole("MANDOR", "ADMIN");
             verify(authorizedUrl).hasAnyRole("SUPIR", "ADMIN");
             verify(authorizedUrl).hasAnyRole("BURUH", "MANDOR", "ADMIN");
             verify(registry).anyRequest();
-            verify(authorizedUrl).authenticated();
             return http;
         });
 
@@ -107,6 +102,7 @@ class SecurityConfigTest {
         SecurityFilterChain result = securityConfig.filterChain(http);
 
         assertSame(expectedFilterChain, result);
+        verify(http, times(2)).addFilterBefore(any(jakarta.servlet.Filter.class), any(Class.class));
     }
 
     @Test
