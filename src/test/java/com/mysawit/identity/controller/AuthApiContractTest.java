@@ -49,7 +49,7 @@ class AuthApiContractTest {
         request.setPassword("secret123");
         request.setRole(Role.BURUH);
 
-        AuthResponse response = new AuthResponse("jwt-token", "1", "user", "user@mail.com", "BURUH");
+        AuthResponse response = new AuthResponse("jwt-token", "refresh-token", "1", "user", "user@mail.com", "BURUH");
         when(authService.register(any(RegisterRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/register")
@@ -121,7 +121,7 @@ class AuthApiContractTest {
         request.setEmail("user@mail.com");
         request.setPassword("secret123");
 
-        AuthResponse response = new AuthResponse("jwt-token", "1", "user", "user@mail.com", "BURUH");
+        AuthResponse response = new AuthResponse("jwt-token", "refresh-token", "1", "user", "user@mail.com", "BURUH");
         when(authService.login(any(LoginRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/login")
@@ -137,7 +137,7 @@ class AuthApiContractTest {
 
     @Test
     void loginAcceptsUsernameAliasForBackwardCompatibility() throws Exception {
-        AuthResponse response = new AuthResponse("jwt-token", "1", "user", "user@mail.com", "BURUH");
+        AuthResponse response = new AuthResponse("jwt-token", "refresh-token", "1", "user", "user@mail.com", "BURUH");
         when(authService.login(any(LoginRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/login")

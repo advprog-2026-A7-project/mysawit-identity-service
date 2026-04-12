@@ -7,28 +7,36 @@ import com.mysawit.identity.dto.LoginRequest;
 import com.mysawit.identity.dto.RegisterRequest;
 import com.mysawit.identity.dto.ValidateTokenResponse;
 import com.mysawit.identity.enums.Role;
+import com.mysawit.identity.event.UserRegisteredEvent;
 import com.mysawit.identity.exception.DuplicateCertificationNumberException;
 import com.mysawit.identity.exception.DuplicateEmailException;
+import com.mysawit.identity.exception.GoogleSubAlreadyLinkedException;
 import com.mysawit.identity.exception.InvalidCredentialsException;
 import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
 import com.mysawit.identity.exception.InvalidTokenException;
 import com.mysawit.identity.exception.MissingMandorCertificationException;
+import com.mysawit.identity.exception.RefreshTokenExpiredException;
+import com.mysawit.identity.exception.UserNotFoundException;
 import com.mysawit.identity.model.Buruh;
 import com.mysawit.identity.model.Mandor;
+import com.mysawit.identity.model.RefreshToken;
 import com.mysawit.identity.model.Supir;
 import com.mysawit.identity.model.User;
 import com.mysawit.identity.repository.MandorRepository;
+import com.mysawit.identity.repository.RefreshTokenRepository;
 import com.mysawit.identity.repository.UserRepository;
 import com.mysawit.identity.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,19 +46,28 @@ class AuthServiceTest {
 
     private UserRepository userRepository;
     private MandorRepository mandorRepository;
+    private RefreshTokenRepository refreshTokenRepository;
     private PasswordEncoder passwordEncoder;
     private JwtTokenProvider jwtTokenProvider;
     private GoogleTokenVerifierService googleTokenVerifierService;
+    private ApplicationEventPublisher eventPublisher;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
         mandorRepository = mock(MandorRepository.class);
+        refreshTokenRepository = mock(RefreshTokenRepository.class);
         passwordEncoder = mock(PasswordEncoder.class);
         jwtTokenProvider = mock(JwtTokenProvider.class);
         googleTokenVerifierService = mock(GoogleTokenVerifierService.class);
-        authService = new AuthService(userRepository, mandorRepository, passwordEncoder, jwtTokenProvider, googleTokenVerifierService);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        authService = new AuthService(userRepository, mandorRepository, refreshTokenRepository,
+                passwordEncoder, jwtTokenProvider, googleTokenVerifierService, eventPublisher);
+
+        when(jwtTokenProvider.generateRefreshTokenValue()).thenReturn("refresh-token");
+        when(jwtTokenProvider.getRefreshExpiration()).thenReturn(604800000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
     }
 
     @Test
@@ -97,6 +114,7 @@ class AuthServiceTest {
         AuthResponse response = authService.register(request);
 
         assertEquals("jwt", response.getToken());
+        assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("10", response.getId());
         assertEquals("user", response.getUsername());
 
@@ -105,6 +123,8 @@ class AuthServiceTest {
         assertInstanceOf(Buruh.class, captor.getValue());
         assertEquals("encoded", captor.getValue().getPassword());
         assertEquals(Role.BURUH, captor.getValue().getRole());
+
+        verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
     }
 
     @Test
@@ -297,6 +317,7 @@ class AuthServiceTest {
         AuthResponse response = authService.login(request);
 
         assertEquals("jwt", response.getToken());
+        assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("10", response.getId());
         assertEquals("user@mail.com", response.getEmail());
     }
@@ -417,7 +438,7 @@ class AuthServiceTest {
 
         assertEquals("jwt", response.getToken());
         assertEquals("google-sub-1", existingUser.getGoogleSub());
-        verify(userRepository).save(existingUser);
+        verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
     }
 
     @Test
@@ -448,6 +469,249 @@ class AuthServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertEquals("new@mail.com", captor.getValue().getName());
+        verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginReturnsExistingUserByGoogleSub() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-1")
+                .email("user@mail.com")
+                .name("User")
+                .build();
+
+        User existingUser = new User();
+        existingUser.setId("10");
+        existingUser.setName("User");
+        existingUser.setEmail("user@mail.com");
+        existingUser.setRole(Role.BURUH);
+        existingUser.setGoogleSub("google-sub-1");
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.of(existingUser));
+        when(jwtTokenProvider.generateToken("10", Role.BURUH)).thenReturn("jwt");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt", response.getToken());
+        verify(userRepository, never()).findByEmail(anyString());
+        verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginCreatesNewUserWithName() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-3")
+                .email("brand-new@mail.com")
+                .name("Brand New User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-3")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("brand-new@mail.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId("30");
+            return saved;
+        });
+        when(jwtTokenProvider.generateToken("30", Role.BURUH)).thenReturn("jwt");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt", response.getToken());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertEquals("Brand New User", captor.getValue().getName());
+        verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void refreshTokenReturnsNewTokens() {
+        RefreshToken existing = RefreshToken.builder()
+                .id("rt-1")
+                .token("old-refresh")
+                .userId("user-1")
+                .expiresAt(LocalDateTime.now().plusDays(1))
+                .build();
+
+        User user = new User();
+        user.setId("user-1");
+        user.setName("user");
+        user.setEmail("user@mail.com");
+        user.setRole(Role.BURUH);
+
+        when(refreshTokenRepository.findByToken("old-refresh")).thenReturn(Optional.of(existing));
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(jwtTokenProvider.generateToken("user-1", Role.BURUH)).thenReturn("new-jwt");
+
+        AuthResponse response = authService.refreshToken("old-refresh");
+
+        assertEquals("new-jwt", response.getToken());
+        assertEquals("refresh-token", response.getRefreshToken());
+        verify(refreshTokenRepository).delete(existing);
+    }
+
+    @Test
+    void refreshTokenThrowsWhenTokenNotFound() {
+        when(refreshTokenRepository.findByToken("missing")).thenReturn(Optional.empty());
+
+        assertThrows(InvalidTokenException.class, () -> authService.refreshToken("missing"));
+    }
+
+    @Test
+    void refreshTokenThrowsWhenExpired() {
+        RefreshToken expired = RefreshToken.builder()
+                .id("rt-1")
+                .token("expired-token")
+                .userId("user-1")
+                .expiresAt(LocalDateTime.now().minusDays(1))
+                .build();
+
+        when(refreshTokenRepository.findByToken("expired-token")).thenReturn(Optional.of(expired));
+
+        assertThrows(RefreshTokenExpiredException.class, () -> authService.refreshToken("expired-token"));
+        verify(refreshTokenRepository).delete(expired);
+    }
+
+    @Test
+    void refreshTokenThrowsWhenUserNotFound() {
+        RefreshToken existing = RefreshToken.builder()
+                .id("rt-1")
+                .token("valid-refresh")
+                .userId("deleted-user")
+                .expiresAt(LocalDateTime.now().plusDays(1))
+                .build();
+
+        when(refreshTokenRepository.findByToken("valid-refresh")).thenReturn(Optional.of(existing));
+        when(userRepository.findById("deleted-user")).thenReturn(Optional.empty());
+
+        assertThrows(InvalidTokenException.class, () -> authService.refreshToken("valid-refresh"));
+    }
+
+    @Test
+    void logoutDeletesRefreshToken() {
+        RefreshToken existing = RefreshToken.builder()
+                .id("rt-1")
+                .token("token-to-delete")
+                .userId("user-1")
+                .build();
+
+        when(refreshTokenRepository.findByToken("token-to-delete")).thenReturn(Optional.of(existing));
+
+        authService.logout("token-to-delete");
+
+        verify(refreshTokenRepository).delete(existing);
+    }
+
+    @Test
+    void logoutDoesNothingWhenTokenNotFound() {
+        when(refreshTokenRepository.findByToken("missing")).thenReturn(Optional.empty());
+
+        authService.logout("missing");
+
+        verify(refreshTokenRepository, never()).delete(any());
+    }
+
+    @Test
+    void linkGoogleSetsGoogleSub() {
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-1")
+                .email("user@mail.com")
+                .name("User")
+                .build();
+
+        User user = new User();
+        user.setId("user-1");
+        user.setEmail("user@mail.com");
+
+        when(googleTokenVerifierService.verifyToken("id-token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.empty());
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+
+        authService.linkGoogle("user-1", "id-token");
+
+        assertEquals("google-sub-1", user.getGoogleSub());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void linkGoogleThrowsWhenSubAlreadyLinkedToOtherUser() {
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-1")
+                .email("user@mail.com")
+                .name("User")
+                .build();
+
+        User otherUser = new User();
+        otherUser.setId("other-user");
+
+        when(googleTokenVerifierService.verifyToken("id-token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.of(otherUser));
+
+        assertThrows(GoogleSubAlreadyLinkedException.class, () -> authService.linkGoogle("user-1", "id-token"));
+    }
+
+    @Test
+    void linkGoogleSucceedsWhenSubAlreadyLinkedToSameUser() {
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-1")
+                .email("user@mail.com")
+                .name("User")
+                .build();
+
+        User sameUser = new User();
+        sameUser.setId("user-1");
+
+        when(googleTokenVerifierService.verifyToken("id-token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.of(sameUser));
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(sameUser));
+
+        authService.linkGoogle("user-1", "id-token");
+
+        verify(userRepository).save(sameUser);
+    }
+
+    @Test
+    void linkGoogleThrowsWhenUserNotFound() {
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-1")
+                .email("user@mail.com")
+                .name("User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("id-token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.empty());
+        when(userRepository.findById("user-1")).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class, () -> authService.linkGoogle("user-1", "id-token"));
+    }
+
+    @Test
+    void setPasswordEncodesAndSaves() {
+        User user = new User();
+        user.setId("user-1");
+
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("newpass")).thenReturn("encoded-new");
+
+        authService.setPassword("user-1", "newpass");
+
+        assertEquals("encoded-new", user.getPassword());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void setPasswordThrowsWhenUserNotFound() {
+        when(userRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class, () -> authService.setPassword("missing", "newpass"));
     }
 
     @Test

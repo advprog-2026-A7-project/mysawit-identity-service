@@ -15,7 +15,8 @@ class JwtTokenProviderTest {
     void setUp() {
         jwtTokenProvider = new JwtTokenProvider();
         ReflectionTestUtils.setField(jwtTokenProvider, "jwtSecret", "mysawit-secret-key-change-in-production-2026-very-long-for-tests");
-        ReflectionTestUtils.setField(jwtTokenProvider, "jwtExpiration", 3600000L);
+        ReflectionTestUtils.setField(jwtTokenProvider, "accessExpiration", 3600000L);
+        ReflectionTestUtils.setField(jwtTokenProvider, "refreshExpiration", 604800000L);
     }
 
     @Test
@@ -45,5 +46,37 @@ class JwtTokenProviderTest {
     @Test
     void validateTokenReturnsFalseForInvalidToken() {
         assertFalse(jwtTokenProvider.validateToken("invalid-token"));
+    }
+
+    @Test
+    void generateRefreshTokenValueReturnsNonNull() {
+        String refreshToken = jwtTokenProvider.generateRefreshTokenValue();
+
+        assertNotNull(refreshToken);
+        assertFalse(refreshToken.isEmpty());
+    }
+
+    @Test
+    void generateRefreshTokenValueReturnsUniqueValues() {
+        String token1 = jwtTokenProvider.generateRefreshTokenValue();
+        String token2 = jwtTokenProvider.generateRefreshTokenValue();
+
+        assertNotEquals(token1, token2);
+    }
+
+    @Test
+    void getRefreshExpirationReturnsConfiguredValue() {
+        assertEquals(604800000L, jwtTokenProvider.getRefreshExpiration());
+    }
+
+    @Test
+    void getAuthenticationReturnsCorrectPrincipal() {
+        String token = jwtTokenProvider.generateToken("user-1", Role.ADMIN);
+
+        org.springframework.security.core.Authentication auth = jwtTokenProvider.getAuthentication(token);
+
+        assertEquals("user-1", auth.getName());
+        assertTrue(auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
     }
 }
