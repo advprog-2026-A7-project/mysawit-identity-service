@@ -8,6 +8,8 @@ public class AuthResponse {
     private String username;
     private String email;
     private String role;
+    private boolean googleLinked;
+    private boolean hasPassword;
 
     public AuthResponse(String token, String refreshToken, String id, String username, String email, String role) {
         this.token = token;
@@ -72,5 +74,21 @@ public class AuthResponse {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public boolean getGoogleLinked() {
+        return googleLinked;
+    }
+
+    public void setGoogleLinked(boolean googleLinked) {
+        this.googleLinked = googleLinked;
+    }
+
+    public boolean getHasPassword() {
+        return hasPassword;
+    }
+
+    public void setHasPassword(boolean hasPassword) {
+        this.hasPassword = hasPassword;
     }
 }

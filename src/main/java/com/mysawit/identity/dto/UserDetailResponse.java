@@ -23,4 +23,6 @@ public class UserDetailResponse {
     private String mandorId;
     private String certificationNumber;
     private String kebunId;
+    private boolean googleLinked;
+    private boolean hasPassword;
 }

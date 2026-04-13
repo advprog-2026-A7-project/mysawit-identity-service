@@ -128,7 +128,8 @@ public class AuthService {
                             newUser.setEmail(googleUserInfo.getEmail());
                             newUser.setName(googleUserInfo.getName() != null ? googleUserInfo.getName() : googleUserInfo.getEmail());
                             newUser.setUsername(googleUserInfo.getEmail());
-                            newUser.setPassword(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
+                            // Google-only accounts start without a local password.
+                            newUser.setPassword(null);
                             newUser.setRole(Role.BURUH);
                             newUser.setGoogleSub(googleUserInfo.getGoogleSub());
                             return userRepository.save(newUser);
@@ -221,7 +222,7 @@ public class AuthService {
                 .build();
         refreshTokenRepository.save(refreshToken);
 
-        return new AuthResponse(
+        AuthResponse response = new AuthResponse(
                 token,
                 refreshTokenValue,
                 user.getId(),
@@ -229,6 +230,10 @@ public class AuthService {
                 user.getEmail(),
                 user.getRole().name()
         );
+
+        response.setGoogleLinked(StringUtils.hasText(user.getGoogleSub()));
+        response.setHasPassword(StringUtils.hasText(user.getPassword()));
+        return response;
     }
 
     private User buildUserByRole(RegisterRequest request, Role role) {

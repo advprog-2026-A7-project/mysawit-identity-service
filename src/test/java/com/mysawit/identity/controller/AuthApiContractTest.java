@@ -50,6 +50,8 @@ class AuthApiContractTest {
         request.setRole(Role.BURUH);
 
         AuthResponse response = new AuthResponse("jwt-token", "refresh-token", "1", "user", "user@mail.com", "BURUH");
+        response.setGoogleLinked(false);
+        response.setHasPassword(true);
         when(authService.register(any(RegisterRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/register")
@@ -59,7 +61,9 @@ class AuthApiContractTest {
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.username").value("user"))
                 .andExpect(jsonPath("$.email").value("user@mail.com"))
-                .andExpect(jsonPath("$.role").value("BURUH"));
+                .andExpect(jsonPath("$.role").value("BURUH"))
+                .andExpect(jsonPath("$.googleLinked").value(false))
+                .andExpect(jsonPath("$.hasPassword").value(true));
     }
 
     @Test
@@ -122,6 +126,8 @@ class AuthApiContractTest {
         request.setPassword("secret123");
 
         AuthResponse response = new AuthResponse("jwt-token", "refresh-token", "1", "user", "user@mail.com", "BURUH");
+        response.setGoogleLinked(false);
+        response.setHasPassword(true);
         when(authService.login(any(LoginRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/login")
@@ -132,7 +138,9 @@ class AuthApiContractTest {
                 .andExpect(jsonPath("$.type").value("Bearer"))
                 .andExpect(jsonPath("$.username").value("user"))
                 .andExpect(jsonPath("$.email").value("user@mail.com"))
-                .andExpect(jsonPath("$.role").value("BURUH"));
+                .andExpect(jsonPath("$.role").value("BURUH"))
+                .andExpect(jsonPath("$.googleLinked").value(false))
+                .andExpect(jsonPath("$.hasPassword").value(true));
     }
 
     @Test

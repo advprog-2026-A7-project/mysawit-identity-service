@@ -57,7 +57,9 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.email").value("test@google.com"))
                 .andExpect(jsonPath("$.role").value("BURUH"))
-                .andExpect(jsonPath("$.username").value("Google User"));
+                .andExpect(jsonPath("$.username").value("Google User"))
+                .andExpect(jsonPath("$.googleLinked").value(true))
+                .andExpect(jsonPath("$.hasPassword").value(false));
     }
 
     @Test
@@ -92,7 +94,9 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.id").value(user.getId()))
                 .andExpect(jsonPath("$.email").value("test2@google.com"))
                 .andExpect(jsonPath("$.role").value("BURUH"))
-                .andExpect(jsonPath("$.username").value("Existing User"));
+                .andExpect(jsonPath("$.username").value("Existing User"))
+                .andExpect(jsonPath("$.googleLinked").value(true))
+                .andExpect(jsonPath("$.hasPassword").value(true));
     }
 
     @Test

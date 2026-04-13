@@ -104,6 +104,7 @@ class AuthServiceTest {
         saved.setUsername("user");
         saved.setName("user");
         saved.setEmail("user@mail.com");
+        saved.setPassword("encoded");
         saved.setRole(Role.BURUH);
 
         when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
@@ -117,6 +118,8 @@ class AuthServiceTest {
         assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("10", response.getId());
         assertEquals("user", response.getUsername());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
@@ -138,6 +141,7 @@ class AuthServiceTest {
         saved.setUsername("user");
         saved.setName("user");
         saved.setEmail("user@mail.com");
+        saved.setPassword("encoded");
         saved.setRole(Role.MANDOR);
         saved.setCertificationNumber("CERT-001");
 
@@ -151,6 +155,8 @@ class AuthServiceTest {
 
         assertEquals("jwt", response.getToken());
         assertEquals("MANDOR", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
@@ -252,6 +258,7 @@ class AuthServiceTest {
         saved.setUsername("user");
         saved.setName("user");
         saved.setEmail("user@mail.com");
+        saved.setPassword("encoded");
         saved.setRole(Role.SUPIR);
         saved.setKebunId("kebun-1");
 
@@ -263,6 +270,8 @@ class AuthServiceTest {
         AuthResponse response = authService.register(request);
 
         assertEquals("SUPIR", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertInstanceOf(Supir.class, captor.getValue());
@@ -320,6 +329,8 @@ class AuthServiceTest {
         assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("10", response.getId());
         assertEquals("user@mail.com", response.getEmail());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
     }
 
     @Test
@@ -341,6 +352,8 @@ class AuthServiceTest {
 
         assertEquals("jwt-admin", response.getToken());
         assertEquals("ADMIN", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
     }
 
     @Test
@@ -426,6 +439,7 @@ class AuthServiceTest {
         existingUser.setId("10");
         existingUser.setName("Existing User");
         existingUser.setEmail("existing@mail.com");
+        existingUser.setPassword("stored");
         existingUser.setRole(Role.BURUH);
 
         when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
@@ -437,6 +451,8 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
         assertEquals("google-sub-1", existingUser.getGoogleSub());
         verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
     }
@@ -466,9 +482,12 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertEquals("new@mail.com", captor.getValue().getName());
+        assertNull(captor.getValue().getPassword());
         verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
     }
 
@@ -489,6 +508,7 @@ class AuthServiceTest {
         existingUser.setEmail("user@mail.com");
         existingUser.setRole(Role.BURUH);
         existingUser.setGoogleSub("google-sub-1");
+        existingUser.setPassword(null);
 
         when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
         when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.of(existingUser));
@@ -497,6 +517,8 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
         verify(userRepository, never()).findByEmail(anyString());
         verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
     }
@@ -526,9 +548,12 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertEquals("Brand New User", captor.getValue().getName());
+        assertNull(captor.getValue().getPassword());
         verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
     }
 
@@ -545,6 +570,7 @@ class AuthServiceTest {
         user.setId("user-1");
         user.setName("user");
         user.setEmail("user@mail.com");
+        user.setPassword("stored");
         user.setRole(Role.BURUH);
 
         when(refreshTokenRepository.findByToken("old-refresh")).thenReturn(Optional.of(existing));
@@ -555,6 +581,8 @@ class AuthServiceTest {
 
         assertEquals("new-jwt", response.getToken());
         assertEquals("refresh-token", response.getRefreshToken());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
         verify(refreshTokenRepository).delete(existing);
     }
 

@@ -21,6 +21,8 @@ class UserDetailResponseTest {
                 .mandorId("mandor-1")
                 .certificationNumber("CERT-001")
                 .kebunId("kebun-1")
+                .googleLinked(true)
+                .hasPassword(false)
                 .build();
 
         assertEquals("1", response.getId());
@@ -32,6 +34,8 @@ class UserDetailResponseTest {
         assertEquals("mandor-1", response.getMandorId());
         assertEquals("CERT-001", response.getCertificationNumber());
         assertEquals("kebun-1", response.getKebunId());
+        assertTrue(response.isGoogleLinked());
+        assertFalse(response.isHasPassword());
     }
 
     @Test
@@ -47,9 +51,11 @@ class UserDetailResponseTest {
     @Test
     void allArgsConstructorWorks() {
         LocalDateTime now = LocalDateTime.now();
-        UserDetailResponse response = new UserDetailResponse("1", "user", "email", "name", "BURUH", now, "m1", "CERT", "k1");
+        UserDetailResponse response = new UserDetailResponse("1", "user", "email", "name", "BURUH", now, "m1", "CERT", "k1", true, true);
 
         assertEquals("1", response.getId());
         assertEquals("CERT", response.getCertificationNumber());
+        assertTrue(response.isGoogleLinked());
+        assertTrue(response.isHasPassword());
     }
 }
