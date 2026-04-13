@@ -1,8 +1,13 @@
 package com.mysawit.identity.controller;
 
 import com.mysawit.identity.dto.AuthResponse;
+import com.mysawit.identity.dto.GoogleLoginRequest;
+import com.mysawit.identity.dto.LinkGoogleRequest;
 import com.mysawit.identity.dto.LoginRequest;
+import com.mysawit.identity.dto.MessageResponse;
+import com.mysawit.identity.dto.RefreshTokenRequest;
 import com.mysawit.identity.dto.RegisterRequest;
+import com.mysawit.identity.dto.SetPasswordRequest;
 import com.mysawit.identity.dto.ValidateTokenRequest;
 import com.mysawit.identity.dto.ValidateTokenResponse;
 import com.mysawit.identity.exception.InvalidCredentialsException;
@@ -11,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 
 import java.util.Map;
 
@@ -31,7 +37,7 @@ class AuthControllerTest {
     @Test
     void registerReturnsSuccessResponse() {
         RegisterRequest request = new RegisterRequest();
-        AuthResponse responseBody = new AuthResponse("token", "1", "user", "user@mail.com", "BURUH");
+        AuthResponse responseBody = new AuthResponse("token", "refresh", "1", "user", "user@mail.com", "BURUH");
         when(authService.register(request)).thenReturn(responseBody);
 
         ResponseEntity<AuthResponse> response = authController.register(request);
@@ -53,7 +59,7 @@ class AuthControllerTest {
     @Test
     void loginReturnsSuccessResponse() {
         LoginRequest request = new LoginRequest();
-        AuthResponse responseBody = new AuthResponse("token", "1", "user", "user@mail.com", "BURUH");
+        AuthResponse responseBody = new AuthResponse("token", "refresh", "1", "user", "user@mail.com", "BURUH");
         when(authService.login(request)).thenReturn(responseBody);
 
         ResponseEntity<AuthResponse> response = authController.login(request);
@@ -76,6 +82,18 @@ class AuthControllerTest {
     }
 
     @Test
+    void googleLoginReturnsSuccessResponse() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        AuthResponse responseBody = new AuthResponse("token", "refresh", "1", "user", "user@mail.com", "BURUH");
+        when(authService.googleLogin(request)).thenReturn(responseBody);
+
+        ResponseEntity<AuthResponse> response = authController.googleLogin(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertSame(responseBody, response.getBody());
+    }
+
+    @Test
     void validateReturnsSuccessResponse() {
         ValidateTokenRequest request = new ValidateTokenRequest();
         request.setToken("valid-token");
@@ -86,6 +104,55 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(responseBody, response.getBody());
+    }
+
+    @Test
+    void refreshReturnsSuccessResponse() {
+        RefreshTokenRequest request = new RefreshTokenRequest("old-refresh");
+        AuthResponse responseBody = new AuthResponse("new-token", "new-refresh", "1", "user", "user@mail.com", "BURUH");
+        when(authService.refreshToken("old-refresh")).thenReturn(responseBody);
+
+        ResponseEntity<AuthResponse> response = authController.refresh(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertSame(responseBody, response.getBody());
+    }
+
+    @Test
+    void logoutReturnsSuccessResponse() {
+        RefreshTokenRequest request = new RefreshTokenRequest("refresh-token");
+
+        ResponseEntity<MessageResponse> response = authController.logout(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Logged out successfully", response.getBody().getMessage());
+        verify(authService).logout("refresh-token");
+    }
+
+    @Test
+    void linkGoogleReturnsSuccessResponse() {
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getName()).thenReturn("user-1");
+        LinkGoogleRequest request = new LinkGoogleRequest("google-id-token");
+
+        ResponseEntity<MessageResponse> response = authController.linkGoogle(authentication, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Google account linked successfully", response.getBody().getMessage());
+        verify(authService).linkGoogle("user-1", "google-id-token");
+    }
+
+    @Test
+    void setPasswordReturnsSuccessResponse() {
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getName()).thenReturn("user-1");
+        SetPasswordRequest request = new SetPasswordRequest("newpass123");
+
+        ResponseEntity<MessageResponse> response = authController.setPassword(authentication, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Password set successfully", response.getBody().getMessage());
+        verify(authService).setPassword("user-1", "newpass123");
     }
 
     @Test
