@@ -87,6 +87,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/auth/google:
+    post:
+      tags: [Authentication]
+      summary: Google OAuth login or registration
+      operationId: googleLogin
+      security: []
+      description: >
+        Handles both login and registration via Google OAuth.
+        If the Google user already exists, they are logged in (extra fields are ignored).
+        If the user does not exist, a new account is created using the provided role,
+        username, and certificationNumber (if Mandor).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleLoginRequest'
+      responses:
+        "200":
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        "400":
+          description: Missing required registration fields or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Invalid Google ID token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict (duplicate email/certification number)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/auth/validate:
     post:
       tags: [Authentication]
@@ -171,6 +220,27 @@ components:
         - username
         - email
         - password
+
+    GoogleLoginRequest:
+      type: object
+      properties:
+        idToken:
+          type: string
+          description: Google OAuth2 ID token.
+        username:
+          type: string
+          minLength: 3
+          description: Required for first-time Google registration. Ignored for existing users.
+        role:
+          type: string
+          enum: [BURUH, MANDOR, SUPIR]
+          description: Required for first-time Google registration. ADMIN is not allowed. Ignored for existing users.
+        certificationNumber:
+          type: string
+          maxLength: 50
+          description: Required when role is MANDOR during first-time Google registration.
+      required:
+        - idToken
 
     LoginRequest:
       type: object
