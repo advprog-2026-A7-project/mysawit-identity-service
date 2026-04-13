@@ -191,9 +191,14 @@ components:
         token:
           type: string
           description: JWT access token
+        refreshToken:
+          type: string
+          description: Refresh token
         type:
           type: string
           example: Bearer
+        id:
+          type: string
         username:
           type: string
         email:
@@ -202,12 +207,22 @@ components:
         role:
           type: string
           example: BURUH
+        googleLinked:
+          type: boolean
+          description: True when a Google account is linked.
+        hasPassword:
+          type: boolean
+          description: True when local password login is enabled.
       required:
         - token
+        - refreshToken
         - type
+        - id
         - username
         - email
         - role
+        - googleLinked
+        - hasPassword
 
     ValidateTokenRequest:
       type: object
@@ -232,8 +247,14 @@ components:
       type: object
       properties:
         id:
-          type: integer
-          format: int64
+          type: string
+        token:
+          type: string
+        refreshToken:
+          type: string
+        type:
+          type: string
+          example: Bearer
         username:
           type: string
         email:
@@ -242,19 +263,20 @@ components:
         role:
           type: string
           example: BURUH
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
+        googleLinked:
+          type: boolean
+        hasPassword:
+          type: boolean
       required:
         - id
+        - token
+        - refreshToken
+        - type
         - username
         - email
         - role
-        - createdAt
-        - updatedAt
+        - googleLinked
+        - hasPassword
 
     ErrorResponse:
       type: object
