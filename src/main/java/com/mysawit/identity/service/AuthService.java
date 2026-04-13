@@ -13,6 +13,7 @@ import com.mysawit.identity.exception.GoogleSubAlreadyLinkedException;
 import com.mysawit.identity.exception.InvalidCredentialsException;
 import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
+import com.mysawit.identity.exception.MissingGoogleRegistrationFieldException;
 import com.mysawit.identity.exception.InvalidTokenException;
 import com.mysawit.identity.exception.MissingMandorCertificationException;
 import com.mysawit.identity.exception.RefreshTokenExpiredException;
@@ -114,34 +115,72 @@ public class AuthService {
     public AuthResponse googleLogin(GoogleLoginRequest request) {
         GoogleUserInfo googleUserInfo = googleTokenVerifierService.verifyToken(request.getIdToken());
 
-        boolean[] isNewUser = {false};
+        // 1. Try to find existing user by googleSub or email
+        User existingUser = userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
+                .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail()).orElse(null));
 
-        User user = userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
-                .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail())
-                        .map(existingUser -> {
-                            existingUser.setGoogleSub(googleUserInfo.getGoogleSub());
-                            return userRepository.save(existingUser);
-                        })
-                        .orElseGet(() -> {
-                            isNewUser[0] = true;
-                            Buruh newUser = new Buruh();
-                            newUser.setEmail(googleUserInfo.getEmail());
-                            newUser.setName(googleUserInfo.getName() != null ? googleUserInfo.getName() : googleUserInfo.getEmail());
-                            newUser.setUsername(googleUserInfo.getEmail());
-                            // Google-only accounts start without a local password.
-                            newUser.setPassword(null);
-                            newUser.setRole(Role.BURUH);
-                            newUser.setGoogleSub(googleUserInfo.getGoogleSub());
-                            return userRepository.save(newUser);
-                        })
-                );
-
-        if (isNewUser[0]) {
-            eventPublisher.publishEvent(new UserRegisteredEvent(
-                    user.getId(), user.getEmail(), user.getRole().name()));
+        if (existingUser != null) {
+            // Existing user login — link googleSub if not yet set
+            if (existingUser.getGoogleSub() == null) {
+                existingUser.setGoogleSub(googleUserInfo.getGoogleSub());
+                userRepository.save(existingUser);
+            }
+            return buildAuthResponse(existingUser);
         }
 
-        return buildAuthResponse(user);
+        // 2. New user registration — validate required fields
+        if (request.getRole() == null) {
+            throw new MissingGoogleRegistrationFieldException("Role is required for new Google registration");
+        }
+        if (!StringUtils.hasText(request.getUsername())) {
+            throw new MissingGoogleRegistrationFieldException("Username is required for new Google registration");
+        }
+        if (request.getRole() == Role.ADMIN) {
+            throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
+        }
+
+        User newUser = buildGoogleUserByRole(request, googleUserInfo);
+        newUser.setEmail(googleUserInfo.getEmail());
+        newUser.setName(googleUserInfo.getName() != null ? googleUserInfo.getName() : googleUserInfo.getEmail());
+        newUser.setUsername(request.getUsername());
+        newUser.setPassword(null);
+        newUser.setRole(request.getRole());
+        newUser.setGoogleSub(googleUserInfo.getGoogleSub());
+
+        User savedUser;
+        try {
+            savedUser = userRepository.save(newUser);
+        } catch (DataIntegrityViolationException e) {
+            if (request.getRole() == Role.MANDOR) {
+                throw new DuplicateCertificationNumberException("Certification number already exists");
+            }
+            throw e;
+        }
+
+        eventPublisher.publishEvent(new UserRegisteredEvent(
+                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()));
+
+        return buildAuthResponse(savedUser);
+    }
+
+    private User buildGoogleUserByRole(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
+        return switch (request.getRole()) {
+            case BURUH -> new Buruh();
+            case MANDOR -> {
+                String certificationNumber = trimToNull(request.getCertificationNumber());
+                if (certificationNumber == null) {
+                    throw new MissingMandorCertificationException("Certification number is required for MANDOR");
+                }
+                if (mandorRepository.existsByCertificationNumber(certificationNumber)) {
+                    throw new DuplicateCertificationNumberException("Certification number already exists");
+                }
+                Mandor mandor = new Mandor();
+                mandor.setCertificationNumber(certificationNumber);
+                yield mandor;
+            }
+            case SUPIR -> new Supir();
+            case ADMIN -> throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
+        };
     }
 
     public ValidateTokenResponse validateToken(String token) {
