@@ -15,6 +15,7 @@ import com.mysawit.identity.exception.InvalidCredentialsException;
 import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
 import com.mysawit.identity.exception.InvalidTokenException;
+import com.mysawit.identity.exception.MissingGoogleRegistrationFieldException;
 import com.mysawit.identity.exception.MissingMandorCertificationException;
 import com.mysawit.identity.exception.RefreshTokenExpiredException;
 import com.mysawit.identity.exception.UserNotFoundException;
@@ -104,6 +105,7 @@ class AuthServiceTest {
         saved.setUsername("user");
         saved.setName("user");
         saved.setEmail("user@mail.com");
+        saved.setPassword("encoded");
         saved.setRole(Role.BURUH);
 
         when(userRepository.existsByEmail("user@mail.com")).thenReturn(false);
@@ -117,6 +119,8 @@ class AuthServiceTest {
         assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("10", response.getId());
         assertEquals("user", response.getUsername());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
@@ -138,6 +142,7 @@ class AuthServiceTest {
         saved.setUsername("user");
         saved.setName("user");
         saved.setEmail("user@mail.com");
+        saved.setPassword("encoded");
         saved.setRole(Role.MANDOR);
         saved.setCertificationNumber("CERT-001");
 
@@ -151,6 +156,8 @@ class AuthServiceTest {
 
         assertEquals("jwt", response.getToken());
         assertEquals("MANDOR", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
@@ -252,6 +259,7 @@ class AuthServiceTest {
         saved.setUsername("user");
         saved.setName("user");
         saved.setEmail("user@mail.com");
+        saved.setPassword("encoded");
         saved.setRole(Role.SUPIR);
         saved.setKebunId("kebun-1");
 
@@ -263,6 +271,8 @@ class AuthServiceTest {
         AuthResponse response = authService.register(request);
 
         assertEquals("SUPIR", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertInstanceOf(Supir.class, captor.getValue());
@@ -320,6 +330,8 @@ class AuthServiceTest {
         assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("10", response.getId());
         assertEquals("user@mail.com", response.getEmail());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
     }
 
     @Test
@@ -341,6 +353,8 @@ class AuthServiceTest {
 
         assertEquals("jwt-admin", response.getToken());
         assertEquals("ADMIN", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
     }
 
     @Test
@@ -426,6 +440,7 @@ class AuthServiceTest {
         existingUser.setId("10");
         existingUser.setName("Existing User");
         existingUser.setEmail("existing@mail.com");
+        existingUser.setPassword("stored");
         existingUser.setRole(Role.BURUH);
 
         when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
@@ -437,6 +452,8 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
         assertEquals("google-sub-1", existingUser.getGoogleSub());
         verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
     }
@@ -445,6 +462,8 @@ class AuthServiceTest {
     void googleLoginCreatesNewUserWithNullName() {
         GoogleLoginRequest request = new GoogleLoginRequest();
         request.setIdToken("token");
+        request.setUsername("newuser");
+        request.setRole(Role.BURUH);
 
         GoogleUserInfo userInfo = GoogleUserInfo.builder()
                 .googleSub("google-sub-2")
@@ -455,7 +474,6 @@ class AuthServiceTest {
         when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
         when(userRepository.findByGoogleSub("google-sub-2")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode(anyString())).thenReturn("encoded");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User saved = invocation.getArgument(0);
             saved.setId("20");
@@ -466,9 +484,13 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertEquals("new@mail.com", captor.getValue().getName());
+        assertEquals("newuser", captor.getValue().getUsername());
+        assertNull(captor.getValue().getPassword());
         verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
     }
 
@@ -489,6 +511,7 @@ class AuthServiceTest {
         existingUser.setEmail("user@mail.com");
         existingUser.setRole(Role.BURUH);
         existingUser.setGoogleSub("google-sub-1");
+        existingUser.setPassword(null);
 
         when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
         when(userRepository.findByGoogleSub("google-sub-1")).thenReturn(Optional.of(existingUser));
@@ -497,14 +520,18 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
         verify(userRepository, never()).findByEmail(anyString());
         verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
     }
 
     @Test
-    void googleLoginCreatesNewUserWithName() {
+    void googleLoginCreatesNewBuruhWithName() {
         GoogleLoginRequest request = new GoogleLoginRequest();
         request.setIdToken("token");
+        request.setUsername("brandnewuser");
+        request.setRole(Role.BURUH);
 
         GoogleUserInfo userInfo = GoogleUserInfo.builder()
                 .googleSub("google-sub-3")
@@ -515,7 +542,6 @@ class AuthServiceTest {
         when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
         when(userRepository.findByGoogleSub("google-sub-3")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("brand-new@mail.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode(anyString())).thenReturn("encoded");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User saved = invocation.getArgument(0);
             saved.setId("30");
@@ -526,10 +552,328 @@ class AuthServiceTest {
         AuthResponse response = authService.googleLogin(request);
 
         assertEquals("jwt", response.getToken());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
+        assertInstanceOf(Buruh.class, captor.getValue());
         assertEquals("Brand New User", captor.getValue().getName());
+        assertEquals("brandnewuser", captor.getValue().getUsername());
+        assertNull(captor.getValue().getPassword());
         verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginRegistersNewMandorWithCertification() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("mandoruser");
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-G001");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-mandor")
+                .email("mandor@mail.com")
+                .name("Mandor User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-mandor")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mandor@mail.com")).thenReturn(Optional.empty());
+        when(mandorRepository.existsByCertificationNumber("CERT-G001")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId("40");
+            return saved;
+        });
+        when(jwtTokenProvider.generateToken("40", Role.MANDOR)).thenReturn("jwt-mandor");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt-mandor", response.getToken());
+        assertEquals("MANDOR", response.getRole());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertInstanceOf(Mandor.class, captor.getValue());
+        assertEquals("CERT-G001", ((Mandor) captor.getValue()).getCertificationNumber());
+        assertEquals("mandoruser", captor.getValue().getUsername());
+        assertNull(captor.getValue().getPassword());
+
+        verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginExistingUserIgnoresExtraFields() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("ignored-username");
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-IGNORED");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-existing")
+                .email("existing@mail.com")
+                .name("Existing User")
+                .build();
+
+        User existingUser = new User();
+        existingUser.setId("50");
+        existingUser.setName("Existing User");
+        existingUser.setEmail("existing@mail.com");
+        existingUser.setPassword("stored");
+        existingUser.setRole(Role.BURUH);
+        existingUser.setGoogleSub("google-sub-existing");
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-existing")).thenReturn(Optional.of(existingUser));
+        when(jwtTokenProvider.generateToken("50", Role.BURUH)).thenReturn("jwt");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt", response.getToken());
+        assertEquals("BURUH", response.getRole());
+        assertEquals("Existing User", response.getUsername());
+        verify(userRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginThrowsWhenNewUserMissingRole() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("someuser");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-new")
+                .email("new@mail.com")
+                .name("New User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
+
+        MissingGoogleRegistrationFieldException exception = assertThrows(
+                MissingGoogleRegistrationFieldException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Role is required for new Google registration", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginThrowsWhenNewUserMissingUsername() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setRole(Role.BURUH);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-new")
+                .email("new@mail.com")
+                .name("New User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
+
+        MissingGoogleRegistrationFieldException exception = assertThrows(
+                MissingGoogleRegistrationFieldException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Username is required for new Google registration", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginThrowsWhenMandorMissingCertification() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("mandoruser");
+        request.setRole(Role.MANDOR);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-new")
+                .email("new@mail.com")
+                .name("New User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
+
+        MissingMandorCertificationException exception = assertThrows(
+                MissingMandorCertificationException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Certification number is required for MANDOR", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginThrowsWhenNewUserRoleIsAdmin() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("adminuser");
+        request.setRole(Role.ADMIN);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-new")
+                .email("new@mail.com")
+                .name("New User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
+
+        InvalidRoleRegistrationException exception = assertThrows(
+                InvalidRoleRegistrationException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Cannot self-register as ADMIN", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginRegistersNewSupir() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("supiruser");
+        request.setRole(Role.SUPIR);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-supir")
+                .email("supir@mail.com")
+                .name("Supir User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-supir")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("supir@mail.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId("60");
+            return saved;
+        });
+        when(jwtTokenProvider.generateToken("60", Role.SUPIR)).thenReturn("jwt-supir");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt-supir", response.getToken());
+        assertEquals("SUPIR", response.getRole());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertInstanceOf(Supir.class, captor.getValue());
+        assertEquals("supiruser", captor.getValue().getUsername());
+        verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginThrowsWhenMandorCertDuplicate() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("mandoruser2");
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-DUP");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-mandor2")
+                .email("mandor2@mail.com")
+                .name("Mandor User 2")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-mandor2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mandor2@mail.com")).thenReturn(Optional.empty());
+        when(mandorRepository.existsByCertificationNumber("CERT-DUP")).thenReturn(true);
+
+        DuplicateCertificationNumberException exception = assertThrows(
+                DuplicateCertificationNumberException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Certification number already exists", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginWrapsDataIntegrityViolationAsDuplicateCertForMandor() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("mandoruser3");
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-RACE");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-mandor3")
+                .email("mandor3@mail.com")
+                .name("Mandor User 3")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-mandor3")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mandor3@mail.com")).thenReturn(Optional.empty());
+        when(mandorRepository.existsByCertificationNumber("CERT-RACE")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("constraint"));
+
+        DuplicateCertificationNumberException exception = assertThrows(
+                DuplicateCertificationNumberException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Certification number already exists", exception.getMessage());
+    }
+
+    @Test
+    void googleLoginRethrowsDataIntegrityViolationForNonMandorRole() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("buruhuser2");
+        request.setRole(Role.BURUH);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-buruh2")
+                .email("buruh2@mail.com")
+                .name("Buruh User 2")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-buruh2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("buruh2@mail.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("constraint"));
+
+        assertThrows(DataIntegrityViolationException.class, () -> authService.googleLogin(request));
+    }
+
+    @Test
+    void buildGoogleUserByRoleThrowsForAdminRole() throws Exception {
+        Method buildGoogleUserByRole = AuthService.class.getDeclaredMethod(
+                "buildGoogleUserByRole", GoogleLoginRequest.class, GoogleUserInfo.class);
+        buildGoogleUserByRole.setAccessible(true);
+
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setRole(Role.ADMIN);
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-admin")
+                .email("admin@mail.com")
+                .name("Admin User")
+                .build();
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> buildGoogleUserByRole.invoke(authService, request, userInfo)
+        );
+        assertInstanceOf(InvalidRoleRegistrationException.class, exception.getCause());
     }
 
     @Test
@@ -545,6 +889,7 @@ class AuthServiceTest {
         user.setId("user-1");
         user.setName("user");
         user.setEmail("user@mail.com");
+        user.setPassword("stored");
         user.setRole(Role.BURUH);
 
         when(refreshTokenRepository.findByToken("old-refresh")).thenReturn(Optional.of(existing));
@@ -555,6 +900,8 @@ class AuthServiceTest {
 
         assertEquals("new-jwt", response.getToken());
         assertEquals("refresh-token", response.getRefreshToken());
+        assertFalse(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
         verify(refreshTokenRepository).delete(existing);
     }
 

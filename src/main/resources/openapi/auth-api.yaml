@@ -87,6 +87,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/auth/google:
+    post:
+      tags: [Authentication]
+      summary: Google OAuth login or registration
+      operationId: googleLogin
+      security: []
+      description: >
+        Handles both login and registration via Google OAuth.
+        If the Google user already exists, they are logged in (extra fields are ignored).
+        If the user does not exist, a new account is created using the provided role,
+        username, and certificationNumber (if Mandor).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleLoginRequest'
+      responses:
+        "200":
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        "400":
+          description: Missing required registration fields or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Invalid Google ID token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict (duplicate email/certification number)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/auth/validate:
     post:
       tags: [Authentication]
@@ -172,6 +221,27 @@ components:
         - email
         - password
 
+    GoogleLoginRequest:
+      type: object
+      properties:
+        idToken:
+          type: string
+          description: Google OAuth2 ID token.
+        username:
+          type: string
+          minLength: 3
+          description: Required for first-time Google registration. Ignored for existing users.
+        role:
+          type: string
+          enum: [BURUH, MANDOR, SUPIR]
+          description: Required for first-time Google registration. ADMIN is not allowed. Ignored for existing users.
+        certificationNumber:
+          type: string
+          maxLength: 50
+          description: Required when role is MANDOR during first-time Google registration.
+      required:
+        - idToken
+
     LoginRequest:
       type: object
       properties:
@@ -191,9 +261,14 @@ components:
         token:
           type: string
           description: JWT access token
+        refreshToken:
+          type: string
+          description: Refresh token
         type:
           type: string
           example: Bearer
+        id:
+          type: string
         username:
           type: string
         email:
@@ -202,12 +277,22 @@ components:
         role:
           type: string
           example: BURUH
+        googleLinked:
+          type: boolean
+          description: True when a Google account is linked.
+        hasPassword:
+          type: boolean
+          description: True when local password login is enabled.
       required:
         - token
+        - refreshToken
         - type
+        - id
         - username
         - email
         - role
+        - googleLinked
+        - hasPassword
 
     ValidateTokenRequest:
       type: object
@@ -232,8 +317,14 @@ components:
       type: object
       properties:
         id:
-          type: integer
-          format: int64
+          type: string
+        token:
+          type: string
+        refreshToken:
+          type: string
+        type:
+          type: string
+          example: Bearer
         username:
           type: string
         email:
@@ -242,19 +333,20 @@ components:
         role:
           type: string
           example: BURUH
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
+        googleLinked:
+          type: boolean
+        hasPassword:
+          type: boolean
       required:
         - id
+        - token
+        - refreshToken
+        - type
         - username
         - email
         - role
-        - createdAt
-        - updatedAt
+        - googleLinked
+        - hasPassword
 
     ErrorResponse:
       type: object
