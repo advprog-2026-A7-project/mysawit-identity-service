@@ -743,6 +743,140 @@ class AuthServiceTest {
     }
 
     @Test
+    void googleLoginRegistersNewSupir() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("supiruser");
+        request.setRole(Role.SUPIR);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-supir")
+                .email("supir@mail.com")
+                .name("Supir User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-supir")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("supir@mail.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId("60");
+            return saved;
+        });
+        when(jwtTokenProvider.generateToken("60", Role.SUPIR)).thenReturn("jwt-supir");
+
+        AuthResponse response = authService.googleLogin(request);
+
+        assertEquals("jwt-supir", response.getToken());
+        assertEquals("SUPIR", response.getRole());
+        assertTrue(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertInstanceOf(Supir.class, captor.getValue());
+        assertEquals("supiruser", captor.getValue().getUsername());
+        verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+    }
+
+    @Test
+    void googleLoginThrowsWhenMandorCertDuplicate() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("mandoruser2");
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-DUP");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-mandor2")
+                .email("mandor2@mail.com")
+                .name("Mandor User 2")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-mandor2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mandor2@mail.com")).thenReturn(Optional.empty());
+        when(mandorRepository.existsByCertificationNumber("CERT-DUP")).thenReturn(true);
+
+        DuplicateCertificationNumberException exception = assertThrows(
+                DuplicateCertificationNumberException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Certification number already exists", exception.getMessage());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginWrapsDataIntegrityViolationAsDuplicateCertForMandor() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("mandoruser3");
+        request.setRole(Role.MANDOR);
+        request.setCertificationNumber("CERT-RACE");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-mandor3")
+                .email("mandor3@mail.com")
+                .name("Mandor User 3")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-mandor3")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mandor3@mail.com")).thenReturn(Optional.empty());
+        when(mandorRepository.existsByCertificationNumber("CERT-RACE")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("constraint"));
+
+        DuplicateCertificationNumberException exception = assertThrows(
+                DuplicateCertificationNumberException.class,
+                () -> authService.googleLogin(request)
+        );
+
+        assertEquals("Certification number already exists", exception.getMessage());
+    }
+
+    @Test
+    void googleLoginRethrowsDataIntegrityViolationForNonMandorRole() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("buruhuser2");
+        request.setRole(Role.BURUH);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-buruh2")
+                .email("buruh2@mail.com")
+                .name("Buruh User 2")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-buruh2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("buruh2@mail.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("constraint"));
+
+        assertThrows(DataIntegrityViolationException.class, () -> authService.googleLogin(request));
+    }
+
+    @Test
+    void buildGoogleUserByRoleThrowsForAdminRole() throws Exception {
+        Method buildGoogleUserByRole = AuthService.class.getDeclaredMethod(
+                "buildGoogleUserByRole", GoogleLoginRequest.class, GoogleUserInfo.class);
+        buildGoogleUserByRole.setAccessible(true);
+
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setRole(Role.ADMIN);
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-admin")
+                .email("admin@mail.com")
+                .name("Admin User")
+                .build();
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> buildGoogleUserByRole.invoke(authService, request, userInfo)
+        );
+        assertInstanceOf(InvalidRoleRegistrationException.class, exception.getCause());
+    }
+
+    @Test
     void refreshTokenReturnsNewTokens() {
         RefreshToken existing = RefreshToken.builder()
                 .id("rt-1")
