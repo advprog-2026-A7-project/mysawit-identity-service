@@ -2,8 +2,8 @@ package com.mysawit.identity.integration;
 
 import com.mysawit.identity.dto.GoogleLoginRequest;
 import com.mysawit.identity.dto.GoogleUserInfo;
-import com.mysawit.identity.model.Buruh;
 import com.mysawit.identity.enums.Role;
+import com.mysawit.identity.model.Buruh;
 import com.mysawit.identity.repository.UserRepository;
 import com.mysawit.identity.service.GoogleTokenVerifierService;
 import org.junit.jupiter.api.Test;
@@ -40,6 +40,8 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
     void googleLogin_returnsToken_whenNewUser() throws Exception {
         GoogleLoginRequest request = new GoogleLoginRequest();
         request.setIdToken("valid-token");
+        request.setRole(Role.BURUH);
+        request.setUsername("Google User");
 
         GoogleUserInfo mockUserInfo = GoogleUserInfo.builder()
                 .googleSub("google-123")
@@ -100,6 +102,46 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void googleLogin_returns400_whenNewUserMissingRole() throws Exception {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("valid-token-norole");
+        request.setUsername("Some User");
+
+        GoogleUserInfo mockUserInfo = GoogleUserInfo.builder()
+                .googleSub("google-norole")
+                .email("norole@google.com")
+                .name("Some User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("valid-token-norole")).thenReturn(mockUserInfo);
+
+        mockMvc.perform(post("/api/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void googleLogin_returns400_whenNewUserMissingUsername() throws Exception {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("valid-token-nousername");
+        request.setRole(Role.BURUH);
+
+        GoogleUserInfo mockUserInfo = GoogleUserInfo.builder()
+                .googleSub("google-nousername")
+                .email("nousername@google.com")
+                .name("Some User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("valid-token-nousername")).thenReturn(mockUserInfo);
+
+        mockMvc.perform(post("/api/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void googleLogin_returns401_whenInvalidToken() throws Exception {
         GoogleLoginRequest request = new GoogleLoginRequest();
         request.setIdToken("invalid-token");
@@ -117,6 +159,8 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
     void googleLogin_returnsValidJwtWithExpectedClaims_whenNewUser() throws Exception {
         GoogleLoginRequest request = new GoogleLoginRequest();
         request.setIdToken("valid-token-3");
+        request.setRole(Role.BURUH);
+        request.setUsername("Google User 3");
 
         GoogleUserInfo mockUserInfo = GoogleUserInfo.builder()
                 .googleSub("google-789")
