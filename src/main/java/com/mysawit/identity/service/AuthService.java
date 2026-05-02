@@ -68,6 +68,14 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
+        Role role = validateAndResolveRegistrationRole(request);
+        User user = buildAndPopulateNewUser(request, role);
+        User savedUser = persistUserHandlingDuplicateCertification(user, role);
+        publishUserRegisteredEvent(savedUser);
+        return buildAuthResponse(savedUser);
+    }
+
+    private Role validateAndResolveRegistrationRole(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateEmailException("Email already exists");
         }
@@ -76,28 +84,33 @@ public class AuthService {
         if (role == Role.ADMIN) {
             throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
         }
+        return role;
+    }
 
+    private User buildAndPopulateNewUser(RegisterRequest request, Role role) {
         User user = buildUserByRole(request, role);
         user.setName(request.getUsername());
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(role);
+        return user;
+    }
 
-        User savedUser;
+    private User persistUserHandlingDuplicateCertification(User user, Role role) {
         try {
-            savedUser = userRepository.save(user);
+            return userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
             if (role == Role.MANDOR) {
                 throw new DuplicateCertificationNumberException("Certification number already exists");
             }
             throw e;
         }
+    }
 
+    private void publishUserRegisteredEvent(User user) {
         eventPublisher.publishEvent(new UserRegisteredEvent(
-                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()));
-
-        return buildAuthResponse(savedUser);
+                user.getId(), user.getEmail(), user.getRole().name()));
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -115,20 +128,36 @@ public class AuthService {
     public AuthResponse googleLogin(GoogleLoginRequest request) {
         GoogleUserInfo googleUserInfo = googleTokenVerifierService.verifyToken(request.getIdToken());
 
-        // 1. Try to find existing user by googleSub or email
-        User existingUser = userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
-                .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail()).orElse(null));
-
+        User existingUser = findExistingUserForGoogleLogin(googleUserInfo);
         if (existingUser != null) {
-            // Existing user login — link googleSub if not yet set
-            if (existingUser.getGoogleSub() == null) {
-                existingUser.setGoogleSub(googleUserInfo.getGoogleSub());
-                userRepository.save(existingUser);
-            }
-            return buildAuthResponse(existingUser);
+            return handleExistingUserLogin(existingUser, googleUserInfo);
         }
 
-        // 2. New user registration — validate required fields
+        return registerNewGoogleUser(request, googleUserInfo);
+    }
+
+    private User findExistingUserForGoogleLogin(GoogleUserInfo googleUserInfo) {
+        return userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
+                .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail()).orElse(null));
+    }
+
+    private AuthResponse handleExistingUserLogin(User existingUser, GoogleUserInfo googleUserInfo) {
+        if (existingUser.getGoogleSub() == null) {
+            existingUser.setGoogleSub(googleUserInfo.getGoogleSub());
+            userRepository.save(existingUser);
+        }
+        return buildAuthResponse(existingUser);
+    }
+
+    private AuthResponse registerNewGoogleUser(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
+        validateGoogleRegistrationRequest(request);
+        User newUser = buildAndPopulateNewGoogleUser(request, googleUserInfo);
+        User savedUser = persistUserHandlingDuplicateCertification(newUser, request.getRole());
+        publishUserRegisteredEvent(savedUser);
+        return buildAuthResponse(savedUser);
+    }
+
+    private void validateGoogleRegistrationRequest(GoogleLoginRequest request) {
         if (request.getRole() == null) {
             throw new MissingGoogleRegistrationFieldException("Role is required for new Google registration");
         }
@@ -138,7 +167,9 @@ public class AuthService {
         if (request.getRole() == Role.ADMIN) {
             throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
         }
+    }
 
+    private User buildAndPopulateNewGoogleUser(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
         User newUser = buildGoogleUserByRole(request, googleUserInfo);
         newUser.setEmail(googleUserInfo.getEmail());
         newUser.setName(googleUserInfo.getName() != null ? googleUserInfo.getName() : googleUserInfo.getEmail());
@@ -146,21 +177,7 @@ public class AuthService {
         newUser.setPassword(null);
         newUser.setRole(request.getRole());
         newUser.setGoogleSub(googleUserInfo.getGoogleSub());
-
-        User savedUser;
-        try {
-            savedUser = userRepository.save(newUser);
-        } catch (DataIntegrityViolationException e) {
-            if (request.getRole() == Role.MANDOR) {
-                throw new DuplicateCertificationNumberException("Certification number already exists");
-            }
-            throw e;
-        }
-
-        eventPublisher.publishEvent(new UserRegisteredEvent(
-                savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name()));
-
-        return buildAuthResponse(savedUser);
+        return newUser;
     }
 
     private User buildGoogleUserByRole(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
