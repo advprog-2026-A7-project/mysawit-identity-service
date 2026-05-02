@@ -1,6 +1,8 @@
 package com.mysawit.identity.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mysawit.identity.config.RateLimitBucketStore;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -24,4 +26,14 @@ public abstract class BaseIntegrationTest {
 
     @MockitoBean
     protected RabbitTemplate rabbitTemplate;
+
+    @Autowired(required = false)
+    private RateLimitBucketStore rateLimitBucketStore;
+
+    @BeforeEach
+    void clearRateLimitBucketsBeforeEach() {
+        if (rateLimitBucketStore != null) {
+            rateLimitBucketStore.clear();
+        }
+    }
 }

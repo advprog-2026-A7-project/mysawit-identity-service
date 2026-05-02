@@ -2,15 +2,20 @@ package com.mysawit.identity.repository;
 
 import com.mysawit.identity.enums.Role;
 import com.mysawit.identity.model.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * [RED] JPA Auditing — memverifikasi bahwa Spring Data JPA Auditing
+ * [GREEN] JPA Auditing — memverifikasi bahwa Spring Data JPA Auditing
  * (bukan @PrePersist manual) secara otomatis mengisi semua field audit.
  */
 @DataJpaTest
@@ -19,6 +24,31 @@ class UserJpaAuditingTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @BeforeEach
+    void setUpAuditor() {
+        // Auditor user harus ter-persist sebelum Spring Auditing memanggil AuditorAware
+        // pada test berikutnya. createdBy/updatedBy untuk auditor sendiri akan null
+        // — acceptable untuk system/seed user.
+        if (userRepository.findByEmail("system@audit.com").isEmpty()) {
+            userRepository.saveAndFlush(User.builder()
+                    .username("system_auditor")
+                    .email("system@audit.com")
+                    .name("System Auditor")
+                    .password("x")
+                    .role(Role.ADMIN)
+                    .build());
+        }
+    }
+
+    @TestConfiguration
+    @EnableJpaAuditing(auditorAwareRef = "testAuditorProvider")
+    static class TestAuditConfig {
+        @Bean
+        AuditorAware<User> testAuditorProvider(UserRepository userRepository) {
+            return () -> userRepository.findByEmail("system@audit.com");
+        }
+    }
 
     @Test
     void shouldAutoPopulateAllAuditFieldsWithoutManualAssignment() {

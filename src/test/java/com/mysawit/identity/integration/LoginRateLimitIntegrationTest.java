@@ -1,7 +1,11 @@
 package com.mysawit.identity.integration;
 
+import com.mysawit.identity.config.RateLimitBucketStore;
 import com.mysawit.identity.fixtures.TestData;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,6 +18,19 @@ class LoginRateLimitIntegrationTest extends BaseIntegrationTest {
 
     // Ambang batas yang akan dikonfigurasi saat implementasi GREEN
     private static final int RATE_LIMIT_THRESHOLD = 5;
+
+    @Autowired
+    private RateLimitBucketStore rateLimitBucketStore;
+
+    @BeforeEach
+    void resetRateLimitState() {
+        rateLimitBucketStore.clear();
+    }
+
+    @AfterEach
+    void cleanUpRateLimitState() {
+        rateLimitBucketStore.clear();
+    }
 
     @Test
     void loginShouldReturn429AfterExceedingRateLimit() throws Exception {
