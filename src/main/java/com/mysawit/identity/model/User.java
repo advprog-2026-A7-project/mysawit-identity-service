@@ -62,8 +62,6 @@ public class User implements UserDetails {
     @Column(unique = true)
     private String googleSub;
 
-    // Account flags for Spring Security
-
     @Builder.Default
     @Column(nullable = false)
     private boolean accountNonExpired = true;
@@ -79,8 +77,6 @@ public class User implements UserDetails {
     @Builder.Default
     @Column(nullable = false)
     private boolean enabled = true;
-
-    // Audit fields
 
     @CreatedDate
     @Column(nullable = false, updatable = false)
@@ -106,8 +102,6 @@ public class User implements UserDetails {
             id = UUID.randomUUID().toString();
         }
     }
-
-    // Spring Security integration
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

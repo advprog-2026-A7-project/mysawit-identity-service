@@ -9,7 +9,6 @@ public class GoogleLoginRequest {
     @NotBlank(message = "ID token is required")
     private String idToken;
 
-    // Only required for first-time Google registration
     private String username;
     private Role role;
     private String certificationNumber;

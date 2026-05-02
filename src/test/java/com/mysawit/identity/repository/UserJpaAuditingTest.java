@@ -14,10 +14,6 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * [GREEN] JPA Auditing — memverifikasi bahwa Spring Data JPA Auditing
- * (bukan @PrePersist manual) secara otomatis mengisi semua field audit.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 class UserJpaAuditingTest {
@@ -27,9 +23,6 @@ class UserJpaAuditingTest {
 
     @BeforeEach
     void setUpAuditor() {
-        // Auditor user harus ter-persist sebelum Spring Auditing memanggil AuditorAware
-        // pada test berikutnya. createdBy/updatedBy untuk auditor sendiri akan null
-        // — acceptable untuk system/seed user.
         if (userRepository.findByEmail("system@audit.com").isEmpty()) {
             userRepository.saveAndFlush(User.builder()
                     .username("system_auditor")
@@ -52,7 +45,6 @@ class UserJpaAuditingTest {
 
     @Test
     void shouldAutoPopulateAllAuditFieldsWithoutManualAssignment() {
-        // Arrange: buat User TANPA mengisi field audit secara manual
         User user = User.builder()
                 .username("audit_tester")
                 .email("auditjpa@test.com")
@@ -61,27 +53,20 @@ class UserJpaAuditingTest {
                 .role(Role.BURUH)
                 .build();
 
-        // Act: simpan dan paksa flush ke database — Auditing listener harus berjalan
         User saved = userRepository.saveAndFlush(user);
 
-        // Assert createdAt: saat ini LULUS via @PrePersist — target GREEN: diisi @CreatedDate
         assertThat(saved.getCreatedAt())
                 .as("createdAt harus tidak null (saat ini via @PrePersist, target: @CreatedDate)")
                 .isNotNull();
 
-        // Assert updatedAt: saat ini LULUS via @PrePersist — target GREEN: diisi @LastModifiedDate
         assertThat(saved.getUpdatedAt())
                 .as("updatedAt harus tidak null (saat ini via @PrePersist, target: @LastModifiedDate)")
                 .isNotNull();
 
-        // [RED] GAGAL: @EnableJpaAuditing belum dikonfigurasi + tidak ada @CreatedBy pada field
-        // GREEN: AuditorAware<User> harus mengembalikan User entity yang sudah tersimpan,
         assertThat(saved.getCreatedBy())
                 .as("createdBy harus berisi User entity yang diisi oleh AuditorAware<User> via @CreatedBy — SAAT INI NULL (RED)")
                 .isNotNull();
 
-        // [RED] GAGAL: @EnableJpaAuditing belum dikonfigurasi + tidak ada @LastModifiedBy pada field
-        // GREEN: AuditorAware<User> yang sama harus mengembalikan User entity untuk @LastModifiedBy.
         assertThat(saved.getUpdatedBy())
                 .as("updatedBy harus berisi User entity yang diisi oleh AuditorAware<User> via @LastModifiedBy — SAAT INI NULL (RED)")
                 .isNotNull();

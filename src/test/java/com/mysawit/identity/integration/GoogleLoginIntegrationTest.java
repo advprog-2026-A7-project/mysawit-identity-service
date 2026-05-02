@@ -176,13 +176,11 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        // Extract token and id from response
         String responseContent = result.getResponse().getContentAsString();
         String token = objectMapper.readTree(responseContent).get("token").asText();
         String returnedUserId = objectMapper.readTree(responseContent).get("id").asText();
         String returnedRole = objectMapper.readTree(responseContent).get("role").asText();
 
-        // Parse the JWT using JwtTokenProvider's signing key
         javax.crypto.SecretKey secretKey = (javax.crypto.SecretKey) ReflectionTestUtils.invokeMethod(jwtTokenProvider, "getSigningKey");
         io.jsonwebtoken.Claims claims = io.jsonwebtoken.Jwts.parser()
                 .verifyWith(secretKey)
@@ -190,7 +188,6 @@ class GoogleLoginIntegrationTest extends BaseIntegrationTest {
                 .parseSignedClaims(token)
                 .getPayload();
 
-        // Assert claims
         assertNotNull(claims);
         assertEquals(returnedUserId, claims.getSubject());
         assertEquals(returnedUserId, claims.get("userId"));
