@@ -3,7 +3,9 @@ info:
   title: MySawit Identity Service API
   version: 1.0.0
   description: >
-    Identity Service responsible for user authentication and JWT issuance.
+    Identity Service responsible for user authentication, JWT issuance,
+    account linking, user administration, internal user lookup, and
+    role-protected identity-domain access checks.
 
 servers:
   - url: http://localhost:8081
@@ -13,6 +15,10 @@ servers:
 
 tags:
   - name: Authentication
+  - name: Account Linking
+  - name: Administration
+  - name: Internal Users
+  - name: Domain Access
   - name: Health
 
 paths:
@@ -31,34 +37,22 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         "201":
-          description: User successfully registered
+          description: User successfully registered and tokens issued
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/AuthResponse'
         "400":
-          description: Invalid input or business validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/BadRequest'
         "409":
-          description: Conflict (duplicate email/certification number)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Conflict'
         "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/ServerError'
 
   /api/auth/login:
     post:
       tags: [Authentication]
-      summary: Authenticate user and obtain JWT
+      summary: Authenticate user and obtain tokens
       operationId: loginUser
       security: []
       requestBody:
@@ -73,19 +67,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
         "401":
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
         "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/ServerError'
 
   /api/auth/google:
     post:
@@ -94,10 +84,11 @@ paths:
       operationId: googleLogin
       security: []
       description: >
-        Handles both login and registration via Google OAuth.
-        If the Google user already exists, they are logged in (extra fields are ignored).
-        If the user does not exist, a new account is created using the provided role,
-        username, and certificationNumber (if Mandor).
+        Handles both login and registration via Google OAuth. If the Google
+        subject already exists, that user is logged in. If the email exists
+        without a linked Google subject, the account is linked and logged in.
+        For a first-time Google registration, role and username are required.
+        ADMIN self-registration is rejected.
       requestBody:
         required: true
         content:
@@ -110,39 +101,22 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                $ref: '#/components/schemas/AuthResponse'
         "400":
-          description: Missing required registration fields or invalid role
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/BadRequest'
         "401":
-          description: Invalid Google ID token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Unauthorized'
         "409":
-          description: Conflict (duplicate email/certification number)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Conflict'
         "500":
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/ServerError'
 
   /api/auth/validate:
     post:
       tags: [Authentication]
       summary: Validate JWT token
       operationId: validateToken
-      security:
-        - bearerAuth: []
+      security: []
       requestBody:
         required: true
         content:
@@ -156,12 +130,131 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidateTokenResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
         "401":
-          description: Invalid or expired token
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Rotate refresh token and issue new tokens
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        "200":
+          description: Token refresh successful
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke a refresh token
+      operationId: logout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Logged out successfully
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/auth/link-google:
+    post:
+      tags: [Account Linking]
+      summary: Link a Google account to the authenticated user
+      operationId: linkGoogleAccount
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkGoogleRequest'
+      responses:
+        "200":
+          description: Google account linked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Google account linked successfully
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/auth/set-password:
+    post:
+      tags: [Account Linking]
+      summary: Set or replace the authenticated user's local password
+      operationId: setPassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPasswordRequest'
+      responses:
+        "200":
+          description: Password set successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Password set successfully
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/ServerError'
 
   /api/auth/health:
     get:
@@ -177,6 +270,272 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
+  /api/admin/users:
+    get:
+      tags: [Administration]
+      summary: List users
+      operationId: listUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional case-insensitive name filter.
+        - name: email
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional case-insensitive email filter.
+        - name: role
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Role'
+      responses:
+        "200":
+          description: Users matching the filters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserDetailResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/users/{userId}:
+    get:
+      tags: [Administration]
+      summary: Get user detail
+      operationId: getUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: User detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+    delete:
+      tags: [Administration]
+      summary: Delete a user
+      operationId: deleteUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: User deleted successfully
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/users/{buruhId}/assign-mandor:
+    put:
+      tags: [Administration]
+      summary: Assign a BURUH user to a MANDOR
+      operationId: assignBuruhToMandor
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: buruhId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 36
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignBuruhRequest'
+      responses:
+        "200":
+          description: Buruh assigned to Mandor successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Buruh assigned to Mandor successfully
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/users/{buruhId}/unassign-mandor:
+    put:
+      tags: [Administration]
+      summary: Remove a BURUH user's MANDOR assignment
+      operationId: unassignBuruhFromMandor
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: buruhId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 36
+      responses:
+        "200":
+          description: Buruh unassigned from Mandor successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Buruh unassigned from Mandor successfully
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/internal/users/{userId}:
+    get:
+      tags: [Internal Users]
+      summary: Get user detail for trusted internal services
+      operationId: getInternalUserById
+      security:
+        - internalApiKey: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        "200":
+          description: Internal user detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalUserDetailResponse'
+        "401":
+          description: Missing or invalid internal API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalApiKeyErrorResponse'
+              example:
+                message: Missing or invalid API key
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/harvest:
+    get:
+      tags: [Domain Access]
+      summary: Check harvest access
+      operationId: checkHarvestAccess
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Harvest access granted for MANDOR or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainAccessResponse'
+              example:
+                resource: harvest
+                access: harvest-access-granted
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/delivery:
+    get:
+      tags: [Domain Access]
+      summary: Check delivery access
+      operationId: checkDeliveryAccess
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Delivery access granted for SUPIR or ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainAccessResponse'
+              example:
+                resource: delivery
+                access: delivery-access-granted
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "500":
+          $ref: '#/components/responses/ServerError'
+
+  /api/payroll:
+    get:
+      tags: [Domain Access]
+      summary: Check payroll access
+      operationId: checkPayrollAccess
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Payroll access granted for ADMIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainAccessResponse'
+              example:
+                resource: payroll
+                access: payroll-access-granted
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "500":
+          $ref: '#/components/responses/ServerError'
 
 components:
 
@@ -185,8 +544,80 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    internalApiKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Api-Key
+
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 36
+
+  responses:
+    BadRequest:
+      description: Invalid input or business validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing, invalid, or expired credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated user is not allowed to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict, such as duplicate email, certification number, or Google link
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Login rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            timestamp: "2026-05-02T12:00:00+07:00"
+            status: 429
+            error: Too Many Requests
+            message: Too many login attempts. Please try again later.
+            path: /api/auth/login
+    ServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
   schemas:
+
+    Role:
+      type: string
+      enum: [BURUH, MANDOR, SUPIR, ADMIN]
+
+    PublicRegistrationRole:
+      type: string
+      enum: [BURUH, MANDOR, SUPIR]
+      description: ADMIN is rejected for public self-registration.
 
     RegisterRequest:
       type: object
@@ -194,6 +625,7 @@ components:
         username:
           type: string
           minLength: 3
+          maxLength: 50
         email:
           type: string
           format: email
@@ -201,8 +633,8 @@ components:
           type: string
           minLength: 6
         role:
-          type: string
-          enum: [BURUH, MANDOR, SUPIR, ADMIN]
+          allOf:
+            - $ref: '#/components/schemas/PublicRegistrationRole'
           description: Optional. Defaults to BURUH when omitted.
         certificationNumber:
           type: string
@@ -211,7 +643,7 @@ components:
         mandorId:
           type: string
           maxLength: 36
-          description: Optional when role is BURUH.
+          description: Optional when role is BURUH. When present, it must reference an existing MANDOR.
         kebunId:
           type: string
           maxLength: 36
@@ -229,12 +661,11 @@ components:
           description: Google OAuth2 ID token.
         username:
           type: string
-          minLength: 3
           description: Required for first-time Google registration. Ignored for existing users.
         role:
-          type: string
-          enum: [BURUH, MANDOR, SUPIR]
-          description: Required for first-time Google registration. ADMIN is not allowed. Ignored for existing users.
+          allOf:
+            - $ref: '#/components/schemas/PublicRegistrationRole'
+          description: Required for first-time Google registration. Ignored for existing users.
         certificationNumber:
           type: string
           maxLength: 50
@@ -248,22 +679,75 @@ components:
         email:
           type: string
           format: email
-          description: Email for login. Backward compatible alias `username` is accepted temporarily.
+          description: Email for login. Backward-compatible alias `username` is accepted temporarily.
+        username:
+          type: string
+          format: email
+          deprecated: true
+          description: Deprecated alias for `email`.
         password:
           type: string
       required:
-        - email
+        - password
+      anyOf:
+        - required: [email]
+        - required: [username]
+
+    RefreshTokenRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required:
+        - refreshToken
+
+    LinkGoogleRequest:
+      type: object
+      properties:
+        idToken:
+          type: string
+          description: Google OAuth2 ID token.
+      required:
+        - idToken
+
+    SetPasswordRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          minLength: 6
+      required:
         - password
 
-    LoginResponse:
+    ValidateTokenRequest:
       type: object
       properties:
         token:
           type: string
-          description: JWT access token
+      required:
+        - token
+
+    ValidateTokenResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        username:
+          type: string
+          description: Subject extracted from the JWT.
+      required:
+        - valid
+        - username
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT access token.
         refreshToken:
           type: string
-          description: Refresh token
+          description: Refresh token.
         type:
           type: string
           example: Bearer
@@ -271,12 +755,12 @@ components:
           type: string
         username:
           type: string
+          description: User display name returned by the service.
         email:
           type: string
           format: email
         role:
-          type: string
-          example: BURUH
+          $ref: '#/components/schemas/Role'
         googleLinked:
           type: boolean
           description: True when a Google account is linked.
@@ -294,59 +778,111 @@ components:
         - googleLinked
         - hasPassword
 
-    ValidateTokenRequest:
+    MessageResponse:
       type: object
       properties:
-        token:
+        message:
           type: string
       required:
-        - token
+        - message
 
-    ValidateTokenResponse:
-      type: object
-      properties:
-        valid:
-          type: boolean
-        username:
-          type: string
-      required:
-        - valid
-        - username
-
-    UserResponse:
+    UserDetailResponse:
       type: object
       properties:
         id:
           type: string
-        token:
-          type: string
-        refreshToken:
-          type: string
-        type:
-          type: string
-          example: Bearer
         username:
           type: string
         email:
           type: string
           format: email
-        role:
+        name:
           type: string
-          example: BURUH
+        role:
+          $ref: '#/components/schemas/Role'
+        createdAt:
+          type: string
+          format: date-time
+        mandorId:
+          type: string
+          nullable: true
+          description: Present for BURUH users assigned to a MANDOR.
+        certificationNumber:
+          type: string
+          nullable: true
+          description: Present for MANDOR users.
+        kebunId:
+          type: string
+          nullable: true
+          description: Present for SUPIR users when set.
         googleLinked:
           type: boolean
         hasPassword:
           type: boolean
       required:
         - id
-        - token
-        - refreshToken
-        - type
         - username
         - email
+        - name
         - role
+        - createdAt
         - googleLinked
         - hasPassword
+
+    InternalUserDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/Role'
+        mandorId:
+          type: string
+          nullable: true
+          description: Present for BURUH users assigned to a MANDOR.
+        mandorName:
+          type: string
+          nullable: true
+          description: Present for BURUH users assigned to a MANDOR.
+        certificationNumber:
+          type: string
+          nullable: true
+          description: Present for MANDOR users.
+        kebunId:
+          type: string
+          nullable: true
+          description: Present for SUPIR users when set.
+      required:
+        - id
+        - name
+        - email
+        - role
+
+    AssignBuruhRequest:
+      type: object
+      properties:
+        mandorId:
+          type: string
+          maxLength: 36
+      required:
+        - mandorId
+
+    DomainAccessResponse:
+      type: object
+      properties:
+        resource:
+          type: string
+          enum: [harvest, delivery, payroll]
+        access:
+          type: string
+      required:
+        - resource
+        - access
 
     ErrorResponse:
       type: object
@@ -368,6 +904,14 @@ components:
         - error
         - message
         - path
+
+    InternalApiKeyErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
 
     HealthResponse:
       type: object
