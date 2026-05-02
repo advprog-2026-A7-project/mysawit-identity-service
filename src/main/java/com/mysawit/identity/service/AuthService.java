@@ -11,22 +11,13 @@ import com.mysawit.identity.exception.DuplicateCertificationNumberException;
 import com.mysawit.identity.exception.DuplicateEmailException;
 import com.mysawit.identity.exception.GoogleSubAlreadyLinkedException;
 import com.mysawit.identity.exception.InvalidCredentialsException;
-import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
 import com.mysawit.identity.exception.MissingGoogleRegistrationFieldException;
-import com.mysawit.identity.exception.InvalidTokenException;
-import com.mysawit.identity.exception.MissingMandorCertificationException;
-import com.mysawit.identity.exception.RefreshTokenExpiredException;
 import com.mysawit.identity.exception.UserNotFoundException;
-import com.mysawit.identity.model.Buruh;
-import com.mysawit.identity.model.Mandor;
-import com.mysawit.identity.model.RefreshToken;
-import com.mysawit.identity.model.Supir;
 import com.mysawit.identity.model.User;
-import com.mysawit.identity.repository.MandorRepository;
-import com.mysawit.identity.repository.RefreshTokenRepository;
 import com.mysawit.identity.repository.UserRepository;
-import com.mysawit.identity.security.JwtTokenProvider;
+import com.mysawit.identity.service.registration.UserCreationContext;
+import com.mysawit.identity.service.registration.UserRegistrationFactory;
 import com.mysawit.identity.event.UserRegisteredEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -35,35 +26,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
-
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final MandorRepository mandorRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider jwtTokenProvider;
     private final GoogleTokenVerifierService googleTokenVerifierService;
     private final ApplicationEventPublisher eventPublisher;
+    private final UserRegistrationFactory userRegistrationFactory;
+    private final TokenService tokenService;
 
     public AuthService(
             UserRepository userRepository,
-            MandorRepository mandorRepository,
-            RefreshTokenRepository refreshTokenRepository,
             PasswordEncoder passwordEncoder,
-            JwtTokenProvider jwtTokenProvider,
             GoogleTokenVerifierService googleTokenVerifierService,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            UserRegistrationFactory userRegistrationFactory,
+            TokenService tokenService
     ) {
         this.userRepository = userRepository;
-        this.mandorRepository = mandorRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
-        this.jwtTokenProvider = jwtTokenProvider;
         this.googleTokenVerifierService = googleTokenVerifierService;
         this.eventPublisher = eventPublisher;
+        this.userRegistrationFactory = userRegistrationFactory;
+        this.tokenService = tokenService;
     }
 
     @Transactional
@@ -72,7 +58,7 @@ public class AuthService {
         User user = buildAndPopulateNewUser(request, role);
         User savedUser = persistUserHandlingDuplicateCertification(user, role);
         publishUserRegisteredEvent(savedUser);
-        return buildAuthResponse(savedUser);
+        return tokenService.issueTokens(savedUser);
     }
 
     private Role validateAndResolveRegistrationRole(RegisterRequest request) {
@@ -88,7 +74,12 @@ public class AuthService {
     }
 
     private User buildAndPopulateNewUser(RegisterRequest request, Role role) {
-        User user = buildUserByRole(request, role);
+        UserCreationContext context = UserCreationContext.builder()
+                .certificationNumber(request.getCertificationNumber())
+                .mandorId(request.getMandorId())
+                .kebunId(request.getKebunId())
+                .build();
+        User user = userRegistrationFactory.create(role, context);
         user.setName(request.getUsername());
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
@@ -121,7 +112,7 @@ public class AuthService {
             throw new InvalidCredentialsException("Invalid email or password");
         }
 
-        return buildAuthResponse(user);
+        return tokenService.issueTokens(user);
     }
 
     @Transactional
@@ -146,7 +137,7 @@ public class AuthService {
             existingUser.setGoogleSub(googleUserInfo.getGoogleSub());
             userRepository.save(existingUser);
         }
-        return buildAuthResponse(existingUser);
+        return tokenService.issueTokens(existingUser);
     }
 
     private AuthResponse registerNewGoogleUser(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
@@ -154,7 +145,7 @@ public class AuthService {
         User newUser = buildAndPopulateNewGoogleUser(request, googleUserInfo);
         User savedUser = persistUserHandlingDuplicateCertification(newUser, request.getRole());
         publishUserRegisteredEvent(savedUser);
-        return buildAuthResponse(savedUser);
+        return tokenService.issueTokens(savedUser);
     }
 
     private void validateGoogleRegistrationRequest(GoogleLoginRequest request) {
@@ -170,7 +161,10 @@ public class AuthService {
     }
 
     private User buildAndPopulateNewGoogleUser(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
-        User newUser = buildGoogleUserByRole(request, googleUserInfo);
+        UserCreationContext context = UserCreationContext.builder()
+                .certificationNumber(request.getCertificationNumber())
+                .build();
+        User newUser = userRegistrationFactory.create(request.getRole(), context);
         newUser.setEmail(googleUserInfo.getEmail());
         newUser.setName(googleUserInfo.getName() != null ? googleUserInfo.getName() : googleUserInfo.getEmail());
         newUser.setUsername(request.getUsername());
@@ -180,64 +174,18 @@ public class AuthService {
         return newUser;
     }
 
-    private User buildGoogleUserByRole(GoogleLoginRequest request, GoogleUserInfo googleUserInfo) {
-        return switch (request.getRole()) {
-            case BURUH -> new Buruh();
-            case MANDOR -> {
-                String certificationNumber = trimToNull(request.getCertificationNumber());
-                if (certificationNumber == null) {
-                    throw new MissingMandorCertificationException("Certification number is required for MANDOR");
-                }
-                if (mandorRepository.existsByCertificationNumber(certificationNumber)) {
-                    throw new DuplicateCertificationNumberException("Certification number already exists");
-                }
-                Mandor mandor = new Mandor();
-                mandor.setCertificationNumber(certificationNumber);
-                yield mandor;
-            }
-            case SUPIR -> new Supir();
-            case ADMIN -> throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
-        };
-    }
-
     public ValidateTokenResponse validateToken(String token) {
-        try {
-            boolean isValid = jwtTokenProvider.validateToken(token);
-            if (!isValid) {
-                throw new InvalidTokenException("Invalid or expired token");
-            }
-
-            String username = jwtTokenProvider.getUsernameFromToken(token);
-            return new ValidateTokenResponse(true, username);
-        } catch (InvalidTokenException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new InvalidTokenException("Invalid or expired token");
-        }
+        return tokenService.validate(token);
     }
 
     @Transactional
     public AuthResponse refreshToken(String refreshTokenValue) {
-        RefreshToken refreshToken = refreshTokenRepository.findByToken(refreshTokenValue)
-                .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
-
-        if (refreshToken.getExpiresAt().isBefore(LocalDateTime.now())) {
-            refreshTokenRepository.delete(refreshToken);
-            throw new RefreshTokenExpiredException("Refresh token has expired");
-        }
-
-        refreshTokenRepository.delete(refreshToken);
-
-        User user = userRepository.findById(refreshToken.getUserId())
-                .orElseThrow(() -> new InvalidTokenException("User not found for refresh token"));
-
-        return buildAuthResponse(user);
+        return tokenService.refresh(refreshTokenValue);
     }
 
     @Transactional
     public void logout(String refreshTokenValue) {
-        refreshTokenRepository.findByToken(refreshTokenValue)
-                .ifPresent(refreshTokenRepository::delete);
+        tokenService.revoke(refreshTokenValue);
     }
 
     @Transactional
@@ -265,72 +213,5 @@ public class AuthService {
 
         user.setPassword(passwordEncoder.encode(rawPassword));
         userRepository.save(user);
-    }
-
-    private AuthResponse buildAuthResponse(User user) {
-        String token = jwtTokenProvider.generateToken(user.getId(), user.getRole());
-        String refreshTokenValue = jwtTokenProvider.generateRefreshTokenValue();
-
-        RefreshToken refreshToken = RefreshToken.builder()
-                .token(refreshTokenValue)
-                .userId(user.getId())
-                .expiresAt(LocalDateTime.now().plusSeconds(jwtTokenProvider.getRefreshExpiration() / 1000))
-                .build();
-        refreshTokenRepository.save(refreshToken);
-
-        AuthResponse response = new AuthResponse(
-                token,
-                refreshTokenValue,
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getRole().name()
-        );
-
-        response.setGoogleLinked(StringUtils.hasText(user.getGoogleSub()));
-        response.setHasPassword(StringUtils.hasText(user.getPassword()));
-        return response;
-    }
-
-    private User buildUserByRole(RegisterRequest request, Role role) {
-        return switch (role) {
-            case BURUH -> {
-                Buruh buruh = new Buruh();
-                String mandorId = trimToNull(request.getMandorId());
-                if (mandorId != null) {
-                    Mandor mandor = mandorRepository.findById(mandorId)
-                            .orElseThrow(() -> new InvalidMandorException("Invalid mandorId"));
-                    buruh.setMandor(mandor);
-                }
-                yield buruh;
-            }
-            case MANDOR -> {
-                String certificationNumber = trimToNull(request.getCertificationNumber());
-                if (certificationNumber == null) {
-                    throw new MissingMandorCertificationException("Certification number is required for MANDOR");
-                }
-                if (mandorRepository.existsByCertificationNumber(certificationNumber)) {
-                    throw new DuplicateCertificationNumberException("Certification number already exists");
-                }
-
-                Mandor mandor = new Mandor();
-                mandor.setCertificationNumber(certificationNumber);
-                yield mandor;
-            }
-            case SUPIR -> {
-                Supir supir = new Supir();
-                supir.setKebunId(trimToNull(request.getKebunId()));
-                yield supir;
-            }
-            case ADMIN -> throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
-        };
-    }
-
-    private String trimToNull(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-
-        return value.trim();
     }
 }
