@@ -37,20 +37,23 @@ class UserTest {
     }
 
     @Test
-    void lifecycleHooksSetTimestamps() {
+    void onCreateAssignsUuidWhenIdIsNull() {
         User user = new User();
 
         user.onCreate();
 
-        assertNotNull(user.getCreatedAt());
-        assertNotNull(user.getUpdatedAt());
+        assertNotNull(user.getId());
+        assertEquals(36, user.getId().length());
+    }
 
-        LocalDateTime beforeUpdate = LocalDateTime.now().minusSeconds(1);
-        user.setUpdatedAt(beforeUpdate.minusDays(1));
+    @Test
+    void onCreateKeepsExistingIdWhenAlreadySet() {
+        User user = new User();
+        user.setId("preset-id");
 
-        user.onUpdate();
+        user.onCreate();
 
-        assertTrue(user.getUpdatedAt().isAfter(beforeUpdate));
+        assertEquals("preset-id", user.getId());
     }
 
     @Test
