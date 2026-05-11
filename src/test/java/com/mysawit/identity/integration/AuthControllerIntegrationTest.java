@@ -30,7 +30,9 @@ class AuthControllerIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.username").value("testuser"))
                 .andExpect(jsonPath("$.email").value("test@mail.com"))
-                .andExpect(jsonPath("$.role").value("BURUH"));
+                .andExpect(jsonPath("$.role").value("BURUH"))
+                .andExpect(jsonPath("$.googleLinked").value(false))
+                .andExpect(jsonPath("$.hasPassword").value(true));
     }
 
     @Test
@@ -172,7 +174,9 @@ class AuthControllerIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.type").value("Bearer"))
                 .andExpect(jsonPath("$.username").value("testuser"))
                 .andExpect(jsonPath("$.email").value("test@mail.com"))
-                .andExpect(jsonPath("$.role").value("BURUH"));
+                .andExpect(jsonPath("$.role").value("BURUH"))
+                .andExpect(jsonPath("$.googleLinked").value(false))
+                .andExpect(jsonPath("$.hasPassword").value(true));
     }
 
     @Test

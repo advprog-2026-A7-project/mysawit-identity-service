@@ -11,6 +11,7 @@ import com.mysawit.identity.exception.InvalidMandorException;
 import com.mysawit.identity.exception.InvalidRoleRegistrationException;
 import com.mysawit.identity.exception.InvalidTokenException;
 import com.mysawit.identity.exception.InvalidUserRoleException;
+import com.mysawit.identity.exception.MissingGoogleRegistrationFieldException;
 import com.mysawit.identity.exception.MissingMandorCertificationException;
 import com.mysawit.identity.exception.RefreshTokenExpiredException;
 import com.mysawit.identity.exception.UserNotFoundException;
@@ -34,6 +35,7 @@ public class GlobalExceptionHandler {
             InvalidMandorException.class,
             InvalidRoleRegistrationException.class,
             MissingMandorCertificationException.class,
+            MissingGoogleRegistrationFieldException.class,
             InvalidUserRoleException.class
     })
     public ResponseEntity<ErrorResponse> handleBadRequest(RuntimeException exception, HttpServletRequest request) {

@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -108,7 +109,9 @@ public class AdminService {
                 .email(user.getEmail())
                 .name(user.getName())
                 .role(user.getRole().name())
-                .createdAt(user.getCreatedAt());
+                .createdAt(user.getCreatedAt())
+                .googleLinked(StringUtils.hasText(user.getGoogleSub()))
+                .hasPassword(StringUtils.hasText(user.getPassword()));
 
         if (user instanceof Buruh buruh && buruh.getMandor() != null) {
             builder.mandorId(buruh.getMandor().getId());

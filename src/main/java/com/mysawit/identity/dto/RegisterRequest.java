@@ -30,7 +30,6 @@ public class RegisterRequest {
     @Size(max = 36, message = "Kebun ID must not exceed 36 characters")
     private String kebunId;
     
-    // Getters and Setters
     public String getUsername() {
         return username;
     }

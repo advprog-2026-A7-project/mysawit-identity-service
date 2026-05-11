@@ -17,6 +17,8 @@ class AuthResponseTest {
         assertEquals("user", response.getUsername());
         assertEquals("user@mail.com", response.getEmail());
         assertEquals("USER", response.getRole());
+        assertFalse(response.getGoogleLinked());
+        assertFalse(response.getHasPassword());
 
         response.setToken("new-token");
         response.setRefreshToken("new-refresh");
@@ -25,6 +27,8 @@ class AuthResponseTest {
         response.setUsername("new-user");
         response.setEmail("new@mail.com");
         response.setRole("ADMIN");
+        response.setGoogleLinked(true);
+        response.setHasPassword(true);
 
         assertEquals("new-token", response.getToken());
         assertEquals("new-refresh", response.getRefreshToken());
@@ -33,5 +37,7 @@ class AuthResponseTest {
         assertEquals("new-user", response.getUsername());
         assertEquals("new@mail.com", response.getEmail());
         assertEquals("ADMIN", response.getRole());
+        assertTrue(response.getGoogleLinked());
+        assertTrue(response.getHasPassword());
     }
 }

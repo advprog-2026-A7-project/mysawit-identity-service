@@ -15,7 +15,6 @@ import lombok.experimental.SuperBuilder;
 @Table(name = "supirs")
 public class Supir extends User {
 
-    // Will become @ManyToOne Kebun when the Kebun entity is available from the plantation module
     @Column(name = "kebun_id", length = 36)
     private String kebunId;
 }

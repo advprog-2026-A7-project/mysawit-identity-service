@@ -50,6 +50,8 @@ class AdminServiceTest {
         user.setEmail("user@mail.com");
         user.setName("User");
         user.setRole(Role.BURUH);
+        user.setPassword("encoded-password");
+        user.setGoogleSub("google-sub-1");
 
         when(userRepository.findAll(any(Specification.class))).thenReturn(List.of(user));
 
@@ -57,6 +59,8 @@ class AdminServiceTest {
 
         assertEquals(1, result.size());
         assertEquals("1", result.get(0).getId());
+        assertTrue(result.get(0).isGoogleLinked());
+        assertTrue(result.get(0).isHasPassword());
     }
 
     @Test
@@ -128,12 +132,16 @@ class AdminServiceTest {
         buruh.setName("Buruh");
         buruh.setRole(Role.BURUH);
         buruh.setMandor(null);
+        buruh.setPassword(null);
+        buruh.setGoogleSub(null);
 
         when(userRepository.findAll(any(Specification.class))).thenReturn(List.of(buruh));
 
         List<UserDetailResponse> result = adminService.listUsers(null, null, null);
 
         assertNull(result.get(0).getMandorId());
+        assertFalse(result.get(0).isGoogleLinked());
+        assertFalse(result.get(0).isHasPassword());
     }
 
     @Test

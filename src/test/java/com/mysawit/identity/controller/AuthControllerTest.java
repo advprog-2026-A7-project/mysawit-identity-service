@@ -11,6 +11,7 @@ import com.mysawit.identity.dto.SetPasswordRequest;
 import com.mysawit.identity.dto.ValidateTokenRequest;
 import com.mysawit.identity.dto.ValidateTokenResponse;
 import com.mysawit.identity.exception.InvalidCredentialsException;
+import com.mysawit.identity.exception.MissingGoogleRegistrationFieldException;
 import com.mysawit.identity.service.AuthService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -91,6 +92,20 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(responseBody, response.getBody());
+    }
+
+    @Test
+    void googleLoginPropagatesMissingGoogleRegistrationFieldException() {
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        when(authService.googleLogin(request))
+                .thenThrow(new MissingGoogleRegistrationFieldException("Role is required for new Google registration"));
+
+        MissingGoogleRegistrationFieldException exception = assertThrows(
+                MissingGoogleRegistrationFieldException.class,
+                () -> authController.googleLogin(request)
+        );
+
+        assertEquals("Role is required for new Google registration", exception.getMessage());
     }
 
     @Test
