@@ -14,8 +14,11 @@ import com.mysawit.identity.model.User;
 import com.mysawit.identity.repository.MandorRepository;
 import com.mysawit.identity.repository.RefreshTokenRepository;
 import com.mysawit.identity.repository.UserRepository;
+import com.mysawit.identity.event.UserAssignedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -30,6 +33,7 @@ class AdminServiceTest {
     private UserRepository userRepository;
     private MandorRepository mandorRepository;
     private RefreshTokenRepository refreshTokenRepository;
+    private ApplicationEventPublisher eventPublisher;
     private AdminService adminService;
 
     @BeforeEach
@@ -37,7 +41,8 @@ class AdminServiceTest {
         userRepository = mock(UserRepository.class);
         mandorRepository = mock(MandorRepository.class);
         refreshTokenRepository = mock(RefreshTokenRepository.class);
-        adminService = new AdminService(userRepository, mandorRepository, refreshTokenRepository);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        adminService = new AdminService(userRepository, mandorRepository, refreshTokenRepository, eventPublisher);
         ReflectionTestUtils.setField(adminService, "adminUtamaEmail", "admin@mysawit.com");
     }
 
@@ -175,6 +180,7 @@ class AdminServiceTest {
 
         Mandor mandor = new Mandor();
         mandor.setId("mandor-1");
+        mandor.setName("Pak Mandor");
 
         when(userRepository.findById("buruh-1")).thenReturn(Optional.of(buruh));
         when(mandorRepository.findById("mandor-1")).thenReturn(Optional.of(mandor));
@@ -183,6 +189,39 @@ class AdminServiceTest {
 
         assertEquals(mandor, buruh.getMandor());
         verify(userRepository).save(buruh);
+
+        ArgumentCaptor<UserAssignedEvent> captor = ArgumentCaptor.forClass(UserAssignedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        UserAssignedEvent event = captor.getValue();
+        assertEquals("buruh-1", event.getUserId());
+        assertEquals("mandor-1", event.getMandorId());
+        assertEquals("Pak Mandor", event.getMandorName());
+        assertEquals(UserAssignedEvent.AssignmentAction.ASSIGNED, event.getAction());
+        assertNotNull(event.getOccurredAt());
+    }
+
+    @Test
+    void assignBuruhToMandorEmitsReassignedWhenAlreadyAssigned() {
+        Mandor previous = new Mandor();
+        previous.setId("mandor-old");
+
+        Buruh buruh = new Buruh();
+        buruh.setId("buruh-1");
+        buruh.setRole(Role.BURUH);
+        buruh.setMandor(previous);
+
+        Mandor mandor = new Mandor();
+        mandor.setId("mandor-1");
+        mandor.setName("Pak Mandor");
+
+        when(userRepository.findById("buruh-1")).thenReturn(Optional.of(buruh));
+        when(mandorRepository.findById("mandor-1")).thenReturn(Optional.of(mandor));
+
+        adminService.assignBuruhToMandor("buruh-1", "mandor-1");
+
+        ArgumentCaptor<UserAssignedEvent> captor = ArgumentCaptor.forClass(UserAssignedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(UserAssignedEvent.AssignmentAction.REASSIGNED, captor.getValue().getAction());
     }
 
     @Test
@@ -231,6 +270,28 @@ class AdminServiceTest {
 
         assertNull(buruh.getMandor());
         verify(userRepository).save(buruh);
+
+        ArgumentCaptor<UserAssignedEvent> captor = ArgumentCaptor.forClass(UserAssignedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        UserAssignedEvent event = captor.getValue();
+        assertEquals("buruh-1", event.getUserId());
+        assertNull(event.getMandorId());
+        assertEquals(UserAssignedEvent.AssignmentAction.UNASSIGNED, event.getAction());
+    }
+
+    @Test
+    void unassignBuruhFromMandorSkipsWhenAlreadyUnassigned() {
+        Buruh buruh = new Buruh();
+        buruh.setId("buruh-1");
+        buruh.setRole(Role.BURUH);
+        buruh.setMandor(null);
+
+        when(userRepository.findById("buruh-1")).thenReturn(Optional.of(buruh));
+
+        adminService.unassignBuruhFromMandor("buruh-1");
+
+        verify(userRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
