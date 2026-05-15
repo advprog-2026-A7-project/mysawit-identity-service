@@ -2,6 +2,7 @@ package com.mysawit.identity.service;
 
 import com.mysawit.identity.dto.UserDetailResponse;
 import com.mysawit.identity.enums.Role;
+import com.mysawit.identity.event.UserAssignedEvent;
 import com.mysawit.identity.exception.CannotDeleteAdminUtamaException;
 import com.mysawit.identity.exception.CannotDeleteSelfException;
 import com.mysawit.identity.exception.InvalidMandorException;
@@ -16,11 +17,13 @@ import com.mysawit.identity.repository.RefreshTokenRepository;
 import com.mysawit.identity.repository.UserRepository;
 import com.mysawit.identity.repository.UserSpecification;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -29,6 +32,7 @@ public class AdminService {
     private final UserRepository userRepository;
     private final MandorRepository mandorRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${admin.utama.email:admin@mysawit.com}")
     private String adminUtamaEmail;
@@ -36,11 +40,13 @@ public class AdminService {
     public AdminService(
             UserRepository userRepository,
             MandorRepository mandorRepository,
-            RefreshTokenRepository refreshTokenRepository
+            RefreshTokenRepository refreshTokenRepository,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.userRepository = userRepository;
         this.mandorRepository = mandorRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<UserDetailResponse> listUsers(String name, String email, Role role) {
@@ -68,8 +74,22 @@ public class AdminService {
         Mandor mandor = mandorRepository.findById(mandorId)
                 .orElseThrow(() -> new InvalidMandorException("Mandor not found"));
 
+        String previousMandorId = buruh.getMandor() != null ? buruh.getMandor().getId() : null;
+
         buruh.setMandor(mandor);
         userRepository.save(buruh);
+
+        UserAssignedEvent.AssignmentAction action = (previousMandorId == null)
+                ? UserAssignedEvent.AssignmentAction.ASSIGNED
+                : UserAssignedEvent.AssignmentAction.REASSIGNED;
+
+        eventPublisher.publishEvent(new UserAssignedEvent(
+                buruh.getId(),
+                mandor.getId(),
+                mandor.getName(),
+                action,
+                Instant.now()
+        ));
     }
 
     @Transactional
@@ -81,8 +101,20 @@ public class AdminService {
             throw new InvalidUserRoleException("User is not a BURUH");
         }
 
+        if (buruh.getMandor() == null) {
+            return;
+        }
+
         buruh.setMandor(null);
         userRepository.save(buruh);
+
+        eventPublisher.publishEvent(new UserAssignedEvent(
+                buruh.getId(),
+                null,
+                null,
+                UserAssignedEvent.AssignmentAction.UNASSIGNED,
+                Instant.now()
+        ));
     }
 
     @Transactional

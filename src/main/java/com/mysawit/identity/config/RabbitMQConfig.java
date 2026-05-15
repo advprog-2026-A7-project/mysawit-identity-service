@@ -16,6 +16,9 @@ public class RabbitMQConfig {
     public static final String QUEUE_NAME = "user.registered.queue";
     public static final String ROUTING_KEY = "user.registered";
 
+    public static final String USER_ASSIGNED_QUEUE = "user.assigned.queue";
+    public static final String USER_ASSIGNED_ROUTING_KEY = "user.assigned";
+
     @Bean
     public TopicExchange userExchange() {
         return new TopicExchange(EXCHANGE_NAME);
@@ -29,6 +32,16 @@ public class RabbitMQConfig {
     @Bean
     public Binding userRegisteredBinding(Queue userRegisteredQueue, TopicExchange userExchange) {
         return BindingBuilder.bind(userRegisteredQueue).to(userExchange).with(ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue userAssignedQueue() {
+        return new Queue(USER_ASSIGNED_QUEUE, true);
+    }
+
+    @Bean
+    public Binding userAssignedBinding(Queue userAssignedQueue, TopicExchange userExchange) {
+        return BindingBuilder.bind(userAssignedQueue).to(userExchange).with(USER_ASSIGNED_ROUTING_KEY);
     }
 
     @Bean

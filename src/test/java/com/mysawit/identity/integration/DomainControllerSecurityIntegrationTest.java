@@ -12,7 +12,7 @@ class DomainControllerSecurityIntegrationTest extends BaseIntegrationTest {
     @Test
     void harvestRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/harvest"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
