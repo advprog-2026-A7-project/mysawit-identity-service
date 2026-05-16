@@ -25,29 +25,25 @@ scrape_configs:
   # Every Prometheus instance exposes its own /metrics endpoint.
   # Scraping it lets you sanity-check "is Prometheus alive?" and
   # see metrics like `prometheus_tsdb_head_series` (data volume).
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ["localhost:9090"]
 
   # --- Job 2: The Spring Boot identity service ---------------
   # `metrics_path` overrides the default `/metrics` because Spring
   # Boot exposes Prometheus data at /actuator/prometheus instead.
-  - job_name: 'mysawit-identity-service'
-    metrics_path: '/actuator/prometheus'
+  - job_name: "mysawit-identity-service"
+    metrics_path: "/actuator/prometheus"
     scrape_interval: 10s
     static_configs:
       - targets:
-          # IMPORTANT: `host.docker.internal` is a special DNS name
-          # that resolves to "the host machine" from inside a Docker
-          # container. We use it because Prometheus runs in Docker
-          # but your Spring Boot app runs on your host on port 8081.
-          #
-          # On Linux this name only works if extra_hosts is set in
-          # docker-compose (already done for you in the compose file).
-          - 'host.docker.internal:8081'
+          # Get it with: ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+          # Note: this IP can change on Windows reboot — re-check if scrape
+          # suddenly goes DOWN after a restart.
+          - "172.25.251.41:8081"
         labels:
           # Free-form labels attached to every metric from this target.
           # They become Prometheus labels you can filter on, e.g.:
           #   up{env="local"}
-          env: 'local'
-          service: 'identity-service'
+          env: "local"
+          service: "identity-service"

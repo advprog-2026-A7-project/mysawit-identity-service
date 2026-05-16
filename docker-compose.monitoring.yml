@@ -21,8 +21,7 @@ services:
       # host:container — open http://localhost:9090 in your browser
       - "9090:9090"
     volumes:
-      # Mount the config file we wrote earlier (read-only).
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring:/etc/prometheus:ro
       # Named volume so scraped data survives container restarts.
       - prometheus-data:/prometheus
     command:
