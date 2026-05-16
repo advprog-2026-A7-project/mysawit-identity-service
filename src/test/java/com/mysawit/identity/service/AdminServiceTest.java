@@ -15,6 +15,7 @@ import com.mysawit.identity.repository.MandorRepository;
 import com.mysawit.identity.repository.RefreshTokenRepository;
 import com.mysawit.identity.repository.UserRepository;
 import com.mysawit.identity.event.UserAssignedEvent;
+import com.mysawit.identity.event.UserDeletedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -317,6 +318,7 @@ class AdminServiceTest {
         User target = new User();
         target.setId("target-1");
         target.setEmail("user@mail.com");
+        target.setRole(Role.SUPIR);
 
         when(userRepository.findById("target-1")).thenReturn(Optional.of(target));
 
@@ -324,6 +326,55 @@ class AdminServiceTest {
 
         verify(refreshTokenRepository).deleteByUserId("target-1");
         verify(userRepository).delete(target);
+
+        ArgumentCaptor<UserDeletedEvent> captor = ArgumentCaptor.forClass(UserDeletedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        UserDeletedEvent event = captor.getValue();
+        assertEquals("target-1", event.getUserId());
+        assertEquals("SUPIR", event.getRole());
+        assertNull(event.getPreviousMandorId());
+        assertNotNull(event.getOccurredAt());
+    }
+
+    @Test
+    void deleteUserEmitsPreviousMandorIdForBuruh() {
+        Mandor mandor = new Mandor();
+        mandor.setId("mandor-1");
+
+        Buruh buruh = new Buruh();
+        buruh.setId("buruh-1");
+        buruh.setEmail("buruh@mail.com");
+        buruh.setRole(Role.BURUH);
+        buruh.setMandor(mandor);
+
+        when(userRepository.findById("buruh-1")).thenReturn(Optional.of(buruh));
+
+        adminService.deleteUser("admin-1", "buruh-1");
+
+        ArgumentCaptor<UserDeletedEvent> captor = ArgumentCaptor.forClass(UserDeletedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        UserDeletedEvent event = captor.getValue();
+        assertEquals("buruh-1", event.getUserId());
+        assertEquals("BURUH", event.getRole());
+        assertEquals("mandor-1", event.getPreviousMandorId());
+    }
+
+    @Test
+    void deleteUserEmitsNullPreviousMandorForUnassignedBuruh() {
+        Buruh buruh = new Buruh();
+        buruh.setId("buruh-1");
+        buruh.setEmail("buruh@mail.com");
+        buruh.setRole(Role.BURUH);
+        buruh.setMandor(null);
+
+        when(userRepository.findById("buruh-1")).thenReturn(Optional.of(buruh));
+
+        adminService.deleteUser("admin-1", "buruh-1");
+
+        ArgumentCaptor<UserDeletedEvent> captor = ArgumentCaptor.forClass(UserDeletedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertNull(captor.getValue().getPreviousMandorId());
+        assertEquals("BURUH", captor.getValue().getRole());
     }
 
     @Test

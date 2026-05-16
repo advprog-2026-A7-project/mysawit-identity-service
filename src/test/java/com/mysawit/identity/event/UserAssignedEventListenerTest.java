@@ -20,14 +20,36 @@ class UserAssignedEventListenerTest {
     }
 
     @Test
-    void handleUserAssignedEventPublishesToRabbit() {
+    void handleAssignedActionPublishesToAssignedRoutingKey() {
         UserAssignedEvent event = new UserAssignedEvent(
                 "buruh-1", "mandor-1", "Pak Mandor",
                 UserAssignedEvent.AssignmentAction.ASSIGNED, Instant.now());
 
         listener.handleUserAssignedEvent(event);
 
-        verify(rabbitTemplate).convertAndSend("user.exchange", "user.assigned", event);
+        verify(rabbitTemplate).convertAndSend("user.exchange", "user.assignment.assigned", event);
+    }
+
+    @Test
+    void handleReassignedActionPublishesToReassignedRoutingKey() {
+        UserAssignedEvent event = new UserAssignedEvent(
+                "buruh-1", "mandor-2", "Pak Mandor Baru",
+                UserAssignedEvent.AssignmentAction.REASSIGNED, Instant.now());
+
+        listener.handleUserAssignedEvent(event);
+
+        verify(rabbitTemplate).convertAndSend("user.exchange", "user.assignment.reassigned", event);
+    }
+
+    @Test
+    void handleUnassignedActionPublishesToUnassignedRoutingKey() {
+        UserAssignedEvent event = new UserAssignedEvent(
+                "buruh-1", null, null,
+                UserAssignedEvent.AssignmentAction.UNASSIGNED, Instant.now());
+
+        listener.handleUserAssignedEvent(event);
+
+        verify(rabbitTemplate).convertAndSend("user.exchange", "user.assignment.unassigned", event);
     }
 
     @Test
@@ -40,6 +62,6 @@ class UserAssignedEventListenerTest {
 
         listener.handleUserAssignedEvent(event);
 
-        verify(rabbitTemplate).convertAndSend("user.exchange", "user.assigned", event);
+        verify(rabbitTemplate).convertAndSend("user.exchange", "user.assignment.assigned", event);
     }
 }
