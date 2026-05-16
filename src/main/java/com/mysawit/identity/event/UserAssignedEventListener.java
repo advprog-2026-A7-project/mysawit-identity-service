@@ -21,17 +21,26 @@ public class UserAssignedEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleUserAssignedEvent(UserAssignedEvent event) {
+        String routingKey = routingKeyFor(event.getAction());
         try {
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.EXCHANGE_NAME,
-                    RabbitMQConfig.USER_ASSIGNED_ROUTING_KEY,
+                    routingKey,
                     event
             );
-            log.info("Published user.assigned event userId={} mandorId={} action={}",
-                    event.getUserId(), event.getMandorId(), event.getAction());
+            log.info("Published {} event userId={} mandorId={} action={}",
+                    routingKey, event.getUserId(), event.getMandorId(), event.getAction());
         } catch (Exception e) {
-            log.error("Failed to publish user.assigned event for userId={}",
-                    event.getUserId(), e);
+            log.error("Failed to publish {} event for userId={}",
+                    routingKey, event.getUserId(), e);
         }
+    }
+
+    private String routingKeyFor(UserAssignedEvent.AssignmentAction action) {
+        return switch (action) {
+            case ASSIGNED -> RabbitMQConfig.USER_ASSIGNMENT_ASSIGNED_ROUTING_KEY;
+            case REASSIGNED -> RabbitMQConfig.USER_ASSIGNMENT_REASSIGNED_ROUTING_KEY;
+            case UNASSIGNED -> RabbitMQConfig.USER_ASSIGNMENT_UNASSIGNED_ROUTING_KEY;
+        };
     }
 }

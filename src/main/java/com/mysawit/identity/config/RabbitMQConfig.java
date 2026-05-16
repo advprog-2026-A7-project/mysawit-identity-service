@@ -13,11 +13,21 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     public static final String EXCHANGE_NAME = "user.exchange";
+
     public static final String QUEUE_NAME = "user.registered.queue";
     public static final String ROUTING_KEY = "user.registered";
 
-    public static final String USER_ASSIGNED_QUEUE = "user.assigned.queue";
-    public static final String USER_ASSIGNED_ROUTING_KEY = "user.assigned";
+    public static final String USER_ASSIGNMENT_ASSIGNED_QUEUE = "user.assignment.assigned.queue";
+    public static final String USER_ASSIGNMENT_ASSIGNED_ROUTING_KEY = "user.assignment.assigned";
+
+    public static final String USER_ASSIGNMENT_REASSIGNED_QUEUE = "user.assignment.reassigned.queue";
+    public static final String USER_ASSIGNMENT_REASSIGNED_ROUTING_KEY = "user.assignment.reassigned";
+
+    public static final String USER_ASSIGNMENT_UNASSIGNED_QUEUE = "user.assignment.unassigned.queue";
+    public static final String USER_ASSIGNMENT_UNASSIGNED_ROUTING_KEY = "user.assignment.unassigned";
+
+    public static final String USER_DELETED_QUEUE = "user.deleted.queue";
+    public static final String USER_DELETED_ROUTING_KEY = "user.deleted";
 
     @Bean
     public TopicExchange userExchange() {
@@ -35,13 +45,43 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public Queue userAssignedQueue() {
-        return new Queue(USER_ASSIGNED_QUEUE, true);
+    public Queue userAssignmentAssignedQueue() {
+        return new Queue(USER_ASSIGNMENT_ASSIGNED_QUEUE, true);
     }
 
     @Bean
-    public Binding userAssignedBinding(Queue userAssignedQueue, TopicExchange userExchange) {
-        return BindingBuilder.bind(userAssignedQueue).to(userExchange).with(USER_ASSIGNED_ROUTING_KEY);
+    public Binding userAssignmentAssignedBinding(Queue userAssignmentAssignedQueue, TopicExchange userExchange) {
+        return BindingBuilder.bind(userAssignmentAssignedQueue).to(userExchange).with(USER_ASSIGNMENT_ASSIGNED_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue userAssignmentReassignedQueue() {
+        return new Queue(USER_ASSIGNMENT_REASSIGNED_QUEUE, true);
+    }
+
+    @Bean
+    public Binding userAssignmentReassignedBinding(Queue userAssignmentReassignedQueue, TopicExchange userExchange) {
+        return BindingBuilder.bind(userAssignmentReassignedQueue).to(userExchange).with(USER_ASSIGNMENT_REASSIGNED_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue userAssignmentUnassignedQueue() {
+        return new Queue(USER_ASSIGNMENT_UNASSIGNED_QUEUE, true);
+    }
+
+    @Bean
+    public Binding userAssignmentUnassignedBinding(Queue userAssignmentUnassignedQueue, TopicExchange userExchange) {
+        return BindingBuilder.bind(userAssignmentUnassignedQueue).to(userExchange).with(USER_ASSIGNMENT_UNASSIGNED_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue userDeletedQueue() {
+        return new Queue(USER_DELETED_QUEUE, true);
+    }
+
+    @Bean
+    public Binding userDeletedBinding(Queue userDeletedQueue, TopicExchange userExchange) {
+        return BindingBuilder.bind(userDeletedQueue).to(userExchange).with(USER_DELETED_ROUTING_KEY);
     }
 
     @Bean

@@ -3,6 +3,7 @@ package com.mysawit.identity.service;
 import com.mysawit.identity.dto.UserDetailResponse;
 import com.mysawit.identity.enums.Role;
 import com.mysawit.identity.event.UserAssignedEvent;
+import com.mysawit.identity.event.UserDeletedEvent;
 import com.mysawit.identity.exception.CannotDeleteAdminUtamaException;
 import com.mysawit.identity.exception.CannotDeleteSelfException;
 import com.mysawit.identity.exception.InvalidMandorException;
@@ -130,8 +131,20 @@ public class AdminService {
             throw new CannotDeleteAdminUtamaException("Cannot delete the Admin Utama account");
         }
 
+        String role = targetUser.getRole().name();
+        String previousMandorId = (targetUser instanceof Buruh buruh && buruh.getMandor() != null)
+                ? buruh.getMandor().getId()
+                : null;
+
         refreshTokenRepository.deleteByUserId(targetUserId);
         userRepository.delete(targetUser);
+
+        eventPublisher.publishEvent(new UserDeletedEvent(
+                targetUserId,
+                role,
+                previousMandorId,
+                Instant.now()
+        ));
     }
 
     private UserDetailResponse toDetailResponse(User user) {
