@@ -1,0 +1,16 @@
+# Grafana "provisioning" = config-as-code.
+# Anything in this folder is applied on Grafana startup, so you don't
+# have to manually add Prometheus as a data source through the UI.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy            # Grafana's backend talks to Prometheus
+                             # (not the browser). Avoids CORS pain.
+    # `prometheus` here is the *service name* from docker-compose.
+    # Docker's built-in DNS resolves it to the Prometheus container.
+    url: http://prometheus:9090
+    isDefault: true          # so new dashboards auto-pick this source
+    editable: true           # you can still tweak it in the UI

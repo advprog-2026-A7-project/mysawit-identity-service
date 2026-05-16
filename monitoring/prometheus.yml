@@ -1,0 +1,53 @@
+# ============================================================
+# Prometheus configuration for mysawit local dev
+# ============================================================
+# Prometheus works by *pulling* metrics from your apps on a fixed
+# interval. It hits an HTTP endpoint that returns plain text like:
+#
+#     http_server_requests_seconds_count{...} 42
+#     jvm_memory_used_bytes{...} 123456789
+#
+# Then it stores every sample in its own time-series database so
+# you can query it later (in the Prometheus UI or from Grafana).
+# ------------------------------------------------------------
+
+global:
+  # How often Prometheus scrapes every target unless overridden below.
+  # 15s is a good default for local dev: fast enough that graphs
+  # feel responsive, slow enough that it doesn't hammer your app.
+  scrape_interval: 15s
+
+  # How often to evaluate alerting/recording rules (we have none yet).
+  evaluation_interval: 15s
+
+scrape_configs:
+  # --- Job 1: Prometheus scraping itself ---------------------
+  # Every Prometheus instance exposes its own /metrics endpoint.
+  # Scraping it lets you sanity-check "is Prometheus alive?" and
+  # see metrics like `prometheus_tsdb_head_series` (data volume).
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # --- Job 2: The Spring Boot identity service ---------------
+  # `metrics_path` overrides the default `/metrics` because Spring
+  # Boot exposes Prometheus data at /actuator/prometheus instead.
+  - job_name: 'mysawit-identity-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+          # IMPORTANT: `host.docker.internal` is a special DNS name
+          # that resolves to "the host machine" from inside a Docker
+          # container. We use it because Prometheus runs in Docker
+          # but your Spring Boot app runs on your host on port 8081.
+          #
+          # On Linux this name only works if extra_hosts is set in
+          # docker-compose (already done for you in the compose file).
+          - 'host.docker.internal:8081'
+        labels:
+          # Free-form labels attached to every metric from this target.
+          # They become Prometheus labels you can filter on, e.g.:
+          #   up{env="local"}
+          env: 'local'
+          service: 'identity-service'
