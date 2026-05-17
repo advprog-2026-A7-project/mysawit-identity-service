@@ -1,8 +1,10 @@
 package com.mysawit.identity.event;
 
+import com.mysawit.identity.config.AsyncConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -20,6 +22,7 @@ public class UserRegisteredEventListener {
         this.rabbitTemplate = rabbitTemplate;
     }
 
+    @Async(AsyncConfig.EVENT_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleUserRegisteredEvent(UserRegisteredEvent event) {
         try {

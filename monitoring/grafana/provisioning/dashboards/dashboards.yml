@@ -1,0 +1,17 @@
+# Tells Grafana: "watch this folder; auto-load every dashboard JSON
+# you find." Drop a *.json dashboard into /var/lib/grafana/dashboards
+# (mapped from ./monitoring/grafana/dashboards on your host) and it
+# appears in Grafana on next refresh — no clicking required.
+
+apiVersion: 1
+
+providers:
+  - name: 'local-dashboards'
+    orgId: 1
+    folder: ''             # show under the "General" folder in the UI
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

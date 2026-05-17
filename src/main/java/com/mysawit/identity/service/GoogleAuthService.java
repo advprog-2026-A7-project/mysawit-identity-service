@@ -113,6 +113,6 @@ public class GoogleAuthService {
 
     private void publishUserRegisteredEvent(User user) {
         eventPublisher.publishEvent(new UserRegisteredEvent(
-                user.getId(), user.getEmail(), user.getRole().name()));
+                user.getId(), user.getEmail(), user.getRole().name(), user.getUsername()));
     }
 }
