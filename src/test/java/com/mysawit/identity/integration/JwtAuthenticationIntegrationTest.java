@@ -38,6 +38,6 @@ class JwtAuthenticationIntegrationTest extends BaseIntegrationTest {
     @Test
     void shouldDenyAccessWithoutJwtToken() throws Exception {
         mockMvc.perform(get("/api/harvest"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 }

@@ -7,7 +7,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CorsConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
+import org.springframework.security.config.annotation.web.configurers.ExceptionHandlingConfigurer;
 import org.springframework.security.config.annotation.web.configurers.SessionManagementConfigurer;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
@@ -65,6 +67,17 @@ class SecurityConfigTest {
             return http;
         });
 
+        when(http.exceptionHandling(any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Customizer<ExceptionHandlingConfigurer<HttpSecurity>> customizer = invocation.getArgument(0);
+            @SuppressWarnings("unchecked")
+            ExceptionHandlingConfigurer<HttpSecurity> exceptionHandlingConfigurer = mock(ExceptionHandlingConfigurer.class);
+            when(exceptionHandlingConfigurer.authenticationEntryPoint(any())).thenReturn(exceptionHandlingConfigurer);
+            customizer.customize(exceptionHandlingConfigurer);
+            verify(exceptionHandlingConfigurer).authenticationEntryPoint(any());
+            return http;
+        });
+
         when(http.authorizeHttpRequests(any())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Customizer<AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry> customizer =
@@ -99,7 +112,8 @@ class SecurityConfigTest {
 
         when(http.build()).thenReturn(expectedFilterChain);
 
-        SecurityFilterChain result = securityConfig.filterChain(http);
+        AuthenticationEntryPoint entryPoint = mock(AuthenticationEntryPoint.class);
+        SecurityFilterChain result = securityConfig.filterChain(http, entryPoint);
 
         assertSame(expectedFilterChain, result);
         verify(http, times(2)).addFilterBefore(any(jakarta.servlet.Filter.class), any(Class.class));
