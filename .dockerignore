@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+.claude
+.gradle
+build
+!build/libs/
+!build/libs/*.jar
+bin
+.env
+.env.example
+app.log
+README.md
+docs
+monitoring
+scripts
