@@ -1,0 +1,206 @@
+name: CD - Deploy Identity to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: identity-cd-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Identity Service (EC2 + Supabase Pooler)
+    if: ${{ github.ref_name == 'main' }}
+    runs-on: ubuntu-latest
+    env:
+      STAGING_HOST: ${{ secrets.STAGING_HOST }}
+      STAGING_USER: ${{ secrets.STAGING_USER }}
+      STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+      STAGING_PORT: ${{ vars.STAGING_PORT }}
+      REMOTE_APP_DIR: ${{ vars.REMOTE_APP_DIR }}
+      IDENTITY_HOST_PORT: ${{ vars.IDENTITY_HOST_PORT }}
+
+    steps:
+      - name: Validate deployment inputs and secrets
+        env:
+          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          CLOUDAMQP_URL: ${{ secrets.CLOUDAMQP_URL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          required_values=(
+            STAGING_HOST
+            STAGING_USER
+            STAGING_SSH_KEY
+            SPRING_DATASOURCE_URL
+            SPRING_DATASOURCE_USERNAME
+            SPRING_DATASOURCE_PASSWORD
+            JWT_SECRET
+            CORS_ORIGINS
+            CLOUDAMQP_URL
+          )
+
+          missing=()
+          for key in "${required_values[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          DATASOURCE_URL="${SPRING_DATASOURCE_URL:-}"
+          if [[ "$DATASOURCE_URL" != jdbc:postgresql://* ]]; then
+            echo "::error::SPRING_DATASOURCE_URL must be a PostgreSQL JDBC URL."
+            exit 1
+          fi
+
+          if [[ "$DATASOURCE_URL" != *"sslmode=require"* ]]; then
+            echo "::warning::Datasource URL does not contain sslmode=require. Supabase normally requires SSL."
+          fi
+
+          if [ "${IDENTITY_HOST_PORT:-8081}" != "8081" ]; then
+            echo "::error::IDENTITY_HOST_PORT must stay 8081 when using Docker host networking."
+            exit 1
+          fi
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build identity JAR
+        run: ./gradlew --no-daemon clean test bootJar
+
+      - name: Set deploy metadata
+        env:
+          INPUT_JAVA_OPTS: ${{ vars.JAVA_OPTS }}
+        run: |
+          set -euo pipefail
+          echo "IMAGE_TAG=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+          echo "STAGING_PORT=${STAGING_PORT:-22}" >> "$GITHUB_ENV"
+          echo "REMOTE_APP_DIR=${REMOTE_APP_DIR:-/home/${STAGING_USER}/apps/mysawit-identity-service}" >> "$GITHUB_ENV"
+          echo "IDENTITY_HOST_PORT=${IDENTITY_HOST_PORT:-8081}" >> "$GITHUB_ENV"
+          echo "JAVA_OPTS=${INPUT_JAVA_OPTS:--Xms256m -Xmx768m}" >> "$GITHUB_ENV"
+
+      - name: Create release bundle
+        env:
+          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          CLOUDAMQP_URL: ${{ secrets.CLOUDAMQP_URL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          ADMIN_UTAMA_EMAIL: ${{ vars.ADMIN_UTAMA_EMAIL }}
+        run: |
+          set -euo pipefail
+          sanitize_single_line() {
+            local key="$1"
+            local value="$2"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "::error::${key} must be single-line for Docker env-file usage"
+              exit 1
+            fi
+          }
+
+          sanitize_single_line "SPRING_DATASOURCE_URL" "$SPRING_DATASOURCE_URL"
+          sanitize_single_line "SPRING_DATASOURCE_USERNAME" "$SPRING_DATASOURCE_USERNAME"
+          sanitize_single_line "SPRING_DATASOURCE_PASSWORD" "$SPRING_DATASOURCE_PASSWORD"
+          sanitize_single_line "JWT_SECRET" "$JWT_SECRET"
+          sanitize_single_line "CORS_ORIGINS" "$CORS_ORIGINS"
+          sanitize_single_line "CLOUDAMQP_URL" "$CLOUDAMQP_URL"
+          sanitize_single_line "JAVA_OPTS" "$JAVA_OPTS"
+
+          mkdir -p release/build/libs release/scripts
+          shopt -s nullglob
+          jar_candidates=(build/libs/*.jar)
+          if [ "${#jar_candidates[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one boot JAR in build/libs but found ${#jar_candidates[@]}"
+            ls -la build/libs || true
+            exit 1
+          fi
+          cp Dockerfile release/Dockerfile
+          cp docker-compose.monitoring.yml release/docker-compose.monitoring.yml
+          cp -R monitoring release/monitoring
+          install -m 644 "${jar_candidates[0]}" release/build/libs/app.jar
+          cp scripts/deploy-ec2.sh release/scripts/deploy-ec2.sh
+          chmod 755 release/scripts/deploy-ec2.sh
+
+          {
+            printf 'SPRING_PROFILES_ACTIVE=prod\n'
+            printf 'SERVER_PORT=8081\n'
+            printf 'SPRING_DATASOURCE_URL=%s\n' "$SPRING_DATASOURCE_URL"
+            printf 'SPRING_DATASOURCE_USERNAME=%s\n' "$SPRING_DATASOURCE_USERNAME"
+            printf 'SPRING_DATASOURCE_PASSWORD=%s\n' "$SPRING_DATASOURCE_PASSWORD"
+            printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+            printf 'CORS_ORIGINS=%s\n' "$CORS_ORIGINS"
+            printf 'CLOUDAMQP_URL=%s\n' "$CLOUDAMQP_URL"
+            printf 'GOOGLE_CLIENT_ID=%s\n' "${GOOGLE_CLIENT_ID:-}"
+            printf 'INTERNAL_API_KEY=%s\n' "${INTERNAL_API_KEY:-}"
+            printf 'ADMIN_UTAMA_EMAIL=%s\n' "${ADMIN_UTAMA_EMAIL:-admin@mysawit.com}"
+            printf 'JAVA_OPTS=%s\n' "$JAVA_OPTS"
+          } > release/.env.deploy
+
+          chmod 600 release/.env.deploy
+          tar -czf release.tgz -C release .
+
+      - name: Prepare SSH client
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s' "$STAGING_SSH_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
+          ssh-keyscan -T 30 -p "$STAGING_PORT" -H "$STAGING_HOST" >> ~/.ssh/known_hosts || true
+
+      - name: Verify SSH access to EC2
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o StrictHostKeyChecking=accept-new -p $STAGING_PORT"
+          ssh $SSH_OPTS "$STAGING_USER@$STAGING_HOST" "echo 'SSH_OK'"
+
+      - name: Upload release bundle
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o StrictHostKeyChecking=accept-new -p $STAGING_PORT"
+          REMOTE_RELEASE_DIR="${REMOTE_APP_DIR}/releases/${IMAGE_TAG}"
+          echo "REMOTE_RELEASE_DIR=${REMOTE_RELEASE_DIR}" >> "$GITHUB_ENV"
+
+          ssh $SSH_OPTS "$STAGING_USER@$STAGING_HOST" "mkdir -p '$REMOTE_RELEASE_DIR' '$REMOTE_APP_DIR/shared'"
+          scp -i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o StrictHostKeyChecking=accept-new -P "$STAGING_PORT" release.tgz "$STAGING_USER@$STAGING_HOST:$REMOTE_APP_DIR/release-${IMAGE_TAG}.tgz"
+          ssh $SSH_OPTS "$STAGING_USER@$STAGING_HOST" "tar -xzf '$REMOTE_APP_DIR/release-${IMAGE_TAG}.tgz' -C '$REMOTE_RELEASE_DIR' && rm -f '$REMOTE_APP_DIR/release-${IMAGE_TAG}.tgz'"
+
+      - name: Deploy on EC2
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o StrictHostKeyChecking=accept-new -p $STAGING_PORT"
+          ssh $SSH_OPTS "$STAGING_USER@$STAGING_HOST" \
+            "export APP_HOME='$REMOTE_APP_DIR' RELEASE_DIR='$REMOTE_RELEASE_DIR' IMAGE_TAG='$IMAGE_TAG' APP_NAME='mysawit-identity' CONTAINER_NAME='mysawit-identity' APP_PORT='8081' HOST_PORT='$IDENTITY_HOST_PORT' DEPLOY_LOG='$REMOTE_APP_DIR/deploy.log'; bash '$REMOTE_RELEASE_DIR/scripts/deploy-ec2.sh'"
+
+      - name: Fetch deployment diagnostics on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o StrictHostKeyChecking=accept-new -p $STAGING_PORT"
+          ssh $SSH_OPTS "$STAGING_USER@$STAGING_HOST" "tail -n 250 '$REMOTE_APP_DIR/deploy.log' || true; (docker ps -a || sudo docker ps -a || true); (docker logs --tail 250 mysawit-identity || sudo docker logs --tail 250 mysawit-identity || true)"

@@ -225,6 +225,104 @@ class GoogleAuthServiceTest {
     }
 
     @Test
+    void googleLoginRejectsAdminRoleBeforeMissingUsername() {
+        // ADMIN check must run before the username-required check so the user
+        // sees the correct error message ("Cannot self-register as ADMIN")
+        // even when other fields are also missing.
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setRole(Role.ADMIN);
+        // username intentionally omitted
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("google-sub-new")
+                .email("new@mail.com")
+                .name("New User")
+                .build();
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("google-sub-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@mail.com")).thenReturn(Optional.empty());
+
+        InvalidRoleRegistrationException exception = assertThrows(
+                InvalidRoleRegistrationException.class,
+                () -> googleAuthService.googleLogin(request)
+        );
+
+        assertEquals("Cannot self-register as ADMIN", exception.getMessage());
+        verifyNoInteractions(userRegistrationFactory);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void googleLoginIgnoresAdminMatchedByEmailWhenGoogleSubNotLinked() {
+        // Security guard: an existing ADMIN must never be auto-linked to a
+        // Google identity solely because the token's email matches. The lookup
+        // must fall through to the (rejected) self-registration path instead.
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+        request.setUsername("anyuser");
+        request.setRole(Role.BURUH);
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("attacker-google-sub")
+                .email("admin@mysawit.com")
+                .name("Attacker")
+                .build();
+
+        User existingAdmin = new User();
+        existingAdmin.setId("admin-1");
+        existingAdmin.setEmail("admin@mysawit.com");
+        existingAdmin.setRole(Role.ADMIN);
+        // no googleSub linked yet
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("attacker-google-sub")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("admin@mysawit.com")).thenReturn(Optional.of(existingAdmin));
+        // Falls through to registration; BURUH email collision -> DataIntegrityViolation
+        when(userRegistrationFactory.create(eq(Role.BURUH), any(UserCreationContext.class))).thenReturn(new Buruh());
+        when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("email"));
+
+        assertThrows(DataIntegrityViolationException.class, () -> googleAuthService.googleLogin(request));
+
+        // The existing admin must NOT have been mutated or saved.
+        assertNull(existingAdmin.getGoogleSub());
+        verify(userRepository, never()).save(existingAdmin);
+        verify(tokenService, never()).issueTokens(existingAdmin);
+    }
+
+    @Test
+    void googleLoginStillHonoursExplicitlyLinkedAdminGoogleSub() {
+        // An admin that has previously linked their Google account (e.g. via
+        // /auth/link-google) MUST still be able to sign in with Google.
+        GoogleLoginRequest request = new GoogleLoginRequest();
+        request.setIdToken("token");
+
+        GoogleUserInfo userInfo = GoogleUserInfo.builder()
+                .googleSub("admin-google-sub")
+                .email("admin@mysawit.com")
+                .name("Admin")
+                .build();
+
+        User existingAdmin = new User();
+        existingAdmin.setId("admin-1");
+        existingAdmin.setEmail("admin@mysawit.com");
+        existingAdmin.setRole(Role.ADMIN);
+        existingAdmin.setGoogleSub("admin-google-sub");
+
+        when(googleTokenVerifierService.verifyToken("token")).thenReturn(userInfo);
+        when(userRepository.findByGoogleSub("admin-google-sub")).thenReturn(Optional.of(existingAdmin));
+        AuthResponse expected = new AuthResponse("jwt", "refresh", "admin-1", "Admin", "admin@mysawit.com", "ADMIN");
+        when(tokenService.issueTokens(existingAdmin)).thenReturn(expected);
+
+        AuthResponse response = googleAuthService.googleLogin(request);
+
+        assertSame(expected, response);
+        verify(userRepository, never()).findByEmail(anyString());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void googleLoginRegistersNewBuruhUsingFactoryAndForwardsCertificationNumber() {
         GoogleLoginRequest request = new GoogleLoginRequest();
         request.setIdToken("token");

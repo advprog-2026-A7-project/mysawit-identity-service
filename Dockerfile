@@ -1,13 +1,22 @@
-# ---- Build stage ----
-FROM gradle:8.10.2-jdk21 AS build
-WORKDIR /home/gradle/project
-COPY . .
-RUN gradle --no-daemon clean build -x test
-
-# ---- Run stage ----
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
-COPY --from=build /home/gradle/project/build/libs/*.jar app.jar
-EXPOSE 8080
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system spring && useradd --system --gid spring spring
+
+ARG JAR_FILE=build/libs/*.jar
+COPY ${JAR_FILE} app.jar
+RUN chown spring:spring /app/app.jar
+
+EXPOSE 8081
+ENV SERVER_PORT=8081
 ENV JAVA_OPTS=""
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app/app.jar"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=5 \
+  CMD curl -fsS "http://127.0.0.1:${SERVER_PORT}/actuator/health/readiness" || exit 1
+
+USER spring:spring
+ENTRYPOINT ["sh","-c","exec java $JAVA_TOOL_OPTIONS $JAVA_OPTS -jar /app/app.jar"]
