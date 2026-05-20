@@ -19,7 +19,7 @@ class UserRegisteredEventListenerTest {
 
     @Test
     void handleUserRegisteredEventPublishesToRabbit() {
-        UserRegisteredEvent event = new UserRegisteredEvent("user-1", "user@mail.com", "BURUH");
+        UserRegisteredEvent event = new UserRegisteredEvent("user-1", "user@mail.com", "BURUH", "budi.santoso");
 
         listener.handleUserRegisteredEvent(event);
 
@@ -28,7 +28,7 @@ class UserRegisteredEventListenerTest {
 
     @Test
     void handleUserRegisteredEventCatchesException() {
-        UserRegisteredEvent event = new UserRegisteredEvent("user-1", "user@mail.com", "BURUH");
+        UserRegisteredEvent event = new UserRegisteredEvent("user-1", "user@mail.com", "BURUH", "budi.santoso");
         doThrow(new RuntimeException("connection failed"))
                 .when(rabbitTemplate).convertAndSend(anyString(), anyString(), any(Object.class));
 

@@ -55,7 +55,9 @@ public class GoogleAuthService {
 
     private User findExistingUserForGoogleLogin(GoogleUserInfo googleUserInfo) {
         return userRepository.findByGoogleSub(googleUserInfo.getGoogleSub())
-                .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail()).orElse(null));
+                .orElseGet(() -> userRepository.findByEmail(googleUserInfo.getEmail())
+                        .filter(user -> user.getRole() != Role.ADMIN)
+                        .orElse(null));
     }
 
     private AuthResponse handleExistingUserLogin(User existingUser, GoogleUserInfo googleUserInfo) {
@@ -78,11 +80,11 @@ public class GoogleAuthService {
         if (request.getRole() == null) {
             throw new MissingGoogleRegistrationFieldException("Role is required for new Google registration");
         }
-        if (!StringUtils.hasText(request.getUsername())) {
-            throw new MissingGoogleRegistrationFieldException("Username is required for new Google registration");
-        }
         if (request.getRole() == Role.ADMIN) {
             throw new InvalidRoleRegistrationException("Cannot self-register as ADMIN");
+        }
+        if (!StringUtils.hasText(request.getUsername())) {
+            throw new MissingGoogleRegistrationFieldException("Username is required for new Google registration");
         }
     }
 
@@ -113,6 +115,6 @@ public class GoogleAuthService {
 
     private void publishUserRegisteredEvent(User user) {
         eventPublisher.publishEvent(new UserRegisteredEvent(
-                user.getId(), user.getEmail(), user.getRole().name()));
+                user.getId(), user.getEmail(), user.getRole().name(), user.getUsername()));
     }
 }
